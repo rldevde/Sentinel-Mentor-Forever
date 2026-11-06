@@ -141,13 +141,6 @@ local OPTIONS = {
     { keybind = true, label = "OPT_BIND" },
     { header = "OPT_DUNGEON_LIST" },
     {
-        label = "OPT_RPG_MODE",
-        tip = "OPT_RPG_MODE_TIP",
-        get = function() return SMJ.IsRPGMode and SMJ.IsRPGMode() or false end,
-        set = function(on) if SMJ.SetJournalMode then SMJ.SetJournalMode(on and "rpg" or "gamer") end end,
-        refreshHome = true,
-    },
-    {
         label = "OPT_HIDE_OUTLEVELED",
         tip = "OPT_HIDE_OUTLEVELED_TIP",
         get = function() return Store().autoHideOutleveled == true end,

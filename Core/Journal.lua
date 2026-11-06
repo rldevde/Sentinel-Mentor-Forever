@@ -10488,10 +10488,6 @@ SlashCmdList.SENTINELMENTORJOURNAL = function(msg)
         print("|cffffd100Dungeon Journal|r item source on tooltips: " .. (on and "ON" or "OFF"))
         return
     end
-    if msg == "mode" then
-        if SMJ.SetJournalMode then SMJ.SetJournalMode(SMJ.IsRPGMode() and "gamer" or "rpg") end
-        return
-    end
     if msg == "worldmap" then
         local on = SMJ.ToggleWorldMapOverlay and SMJ.ToggleWorldMapOverlay()
         print("|cffd8a83cDungeonJournal|r " .. L("WM_DUNGEON_MAP") .. " (M): " .. (on and "ON" or "OFF"))

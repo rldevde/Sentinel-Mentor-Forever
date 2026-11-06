@@ -76,11 +76,11 @@ end
 
 -- ------------------------------------------------------------------- mode
 function SMJ.IsRPGMode()
-    return CharDB().journalMode == "rpg"
+    return false
 end
 
 function SMJ.SetJournalMode(mode)
-    CharDB().journalMode = (mode == "rpg") and "rpg" or "gamer"
+    CharDB().journalMode = "gamer"
     if SMJ.RefreshHomeCards then pcall(SMJ.RefreshHomeCards) end
     if SMJ.UpdateMinimapIcon then pcall(SMJ.UpdateMinimapIcon) end
 end
