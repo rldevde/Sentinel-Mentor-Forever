@@ -1,6 +1,7 @@
 local ADDON_NAME, SM = ...
 SM.DJ = SM.DJ or {}
 local SMJ = SM.DJ
+SMJ._J = {}
 SMJ = SMJ or SM.DJ
 
 local function L(key, ...)
@@ -102,19 +103,19 @@ end
 -- Known quest-start coordinates. Coordinates are normalized (0-1) for the
 -- Classic/Forever world-map canvas. Forever uses the Classic UIMapIDs here
 -- (Westfall 1436, Stormwind City 1453), not the Retail IDs 52 / 84.
-local selectedDungeon = SentinelMentorJournalDB.lastDungeon or ORDER[1]
-local selectedBoss = SentinelMentorJournalDB.lastBoss or 1
+SMJ._J.selectedDungeon = SentinelMentorJournalDB.lastDungeon or ORDER[1]
+SMJ._J.selectedBoss = SentinelMentorJournalDB.lastBoss or 1
 local selectedQuest = SentinelMentorJournalDB.lastQuest or 1
 local allowHiddenQuestSelection = false
-local selectedMode = SentinelMentorJournalDB.lastMode or "bosses"
-local selectedQuestFaction = SentinelMentorJournalDB.questFaction or "Alliance"
+SMJ._J.selectedMode = SentinelMentorJournalDB.lastMode or "bosses"
+SMJ._J.selectedQuestFaction = SentinelMentorJournalDB.questFaction or "Alliance"
 local selectedPrereqStep = nil
 local selectedPrereqParentQuestName = nil
 local selectedPrereqParentQuestID = nil
 local sessionLastView = "home"
 
 local frame
-local minimapButton
+SMJ._J.minimapButton = nil
 local itemTooltip
 
 -- Reuse native Blizzard UI sounds so the journal feels like part of the client.
@@ -736,7 +737,7 @@ if SentinelMentorJournalDB.portraitCacheVersion ~= 2 then
 end
 SentinelMentorJournalDB.displayIDs = SentinelMentorJournalDB.displayIDs or {}
 
-local displayIDCache = SentinelMentorJournalDB.displayIDs
+SMJ._J.displayIDCache = SentinelMentorJournalDB.displayIDs
 
 -- Exact 2D unit portraits captured from the client, keyed ONLY by numeric NPC ID.
 -- This avoids comparing UnitName() values (which can be secret strings in Forever)
@@ -1923,10 +1924,10 @@ local function ApplySelectedLanguage(code)
                 ShowRouteGuide()
             end
             -- Stay on the map (and the same floor) when it was open.
-            if wasMapOpen and not wasRouteOpen and ShowDungeonMap and SMJ.DUNGEON_MAPS[selectedDungeon] then
+            if wasMapOpen and not wasRouteOpen and ShowDungeonMap and SMJ.DUNGEON_MAPS[SMJ._J.selectedDungeon] then
                 ShowDungeonMap()
                 if mapFloor and SMJ.RenderCustomDungeonMap then
-                    SMJ.RenderCustomDungeonMap(SMJ.DUNGEON_MAPS[selectedDungeon], mapFloor)
+                    SMJ.RenderCustomDungeonMap(SMJ.DUNGEON_MAPS[SMJ._J.selectedDungeon], mapFloor)
                 end
             end
         end
@@ -2084,7 +2085,7 @@ local function FinishPortraitResolve(request, displayID)
     if portraitResolveCurrent ~= request or request.serial ~= portraitResolveSerial then return end
 
     if type(displayID) == "number" and displayID > 0 then
-        displayIDCache[request.npcID] = displayID
+        SMJ._J.displayIDCache[request.npcID] = displayID
         portraitRetryAt[request.npcID] = nil
         if SMJ.WarmPortraitDisplay then pcall(SMJ.WarmPortraitDisplay, displayID) end
     else
@@ -2161,7 +2162,7 @@ local function StartNextPortraitResolve()
 end
 
 local function QueuePortraitResolve(npcID)
-    if not npcID or displayIDCache[npcID] or portraitResolveQueued[npcID] then return end
+    if not npcID or SMJ._J.displayIDCache[npcID] or portraitResolveQueued[npcID] then return end
     if not frame or not (frame:IsShown() or SMJ.portraitWarmup) then return end
 
     local now = GetTime and GetTime() or 0
@@ -2316,7 +2317,7 @@ local function SetBossPortrait(texture, dungeonName, boss)
     -- 5) Reuse a display ID resolved by earlier addon versions for bosses that
     -- do not have a verified bundled Classic display ID.
     if npcID and not STATIC_DISPLAY_IDS[npcID]
-        and TrySetDisplayPortrait(texture, displayIDCache[npcID]) then
+        and TrySetDisplayPortrait(texture, SMJ._J.displayIDCache[npcID]) then
         return true
     end
 
@@ -2345,15 +2346,15 @@ end
 SMJ.GoBackPage = function()
     if not frame or not frame:IsShown() then return end
     if frame.routePanel and frame.routePanel:IsShown() then
-        SetMode(selectedMode); return
+        SetMode(SMJ._J.selectedMode); return
     end
     if frame.dungeonMapPanel and frame.dungeonMapPanel:IsShown() then
-        SetMode(selectedMode); return
+        SetMode(SMJ._J.selectedMode); return
     end
     if frame.currentView == "dungeon" then
         local prev = frame.fdjPrevMode
         frame.fdjPrevMode = nil
-        if prev and prev ~= selectedMode then
+        if prev and prev ~= SMJ._J.selectedMode then
             SetMode(prev)
         else
             ShowHomePage()
@@ -3004,7 +3005,7 @@ local function MakeLootRow(parent)
 
     row:SetScript("OnEnter", function(self)
         HideSearchItemHighlight(self)
-        local theme = THEMES[selectedDungeon] or THEMES.default
+        local theme = THEMES[SMJ._J.selectedDungeon] or THEMES.default
         local c = theme.rowSelected
         self.fdjHoverColor = { c[1], c[2], c[3] }
         self:SetBackdropColor(c[1], c[2], c[3], 1)
@@ -3012,7 +3013,7 @@ local function MakeLootRow(parent)
     end)
 
     row:SetScript("OnLeave", function(self)
-        local theme = THEMES[selectedDungeon] or THEMES.default
+        local theme = THEMES[SMJ._J.selectedDungeon] or THEMES.default
         self.fdjHoverColor = nil
         self:SetBackdropColor(unpack(theme.lootRow))
         self.fdjComparing = nil
@@ -3379,7 +3380,7 @@ local function MakeQuestRewardButton(parent)
     end)
 
     button:SetScript("OnLeave", function(self)
-        local theme = THEMES[selectedDungeon] or THEMES.default
+        local theme = THEMES[SMJ._J.selectedDungeon] or THEMES.default
         self.fdjHoverColor = nil
         self:SetBackdropColor(unpack(theme.lootRow))
         self.fdjComparing = nil
@@ -3400,10 +3401,10 @@ local function MakeQuestRewardButton(parent)
         -- Right-click: add to / remove from Favourites, remembering the quest.
         if mouseButton == "RightButton" then
             if SMJ.ShowItemFavouriteMenu then
-                local quests = DB[selectedDungeon] and DB[selectedDungeon].quests or {}
+                local quests = DB[SMJ._J.selectedDungeon] and DB[SMJ._J.selectedDungeon].quests or {}
                 local quest = quests[selectedQuest]
                 local favItem = { self.item[1], self.item[2], nil, tonumber(self.item[3]) }
-                SMJ.ShowItemFavouriteMenu(self, favItem, selectedDungeon, nil,
+                SMJ.ShowItemFavouriteMenu(self, favItem, SMJ._J.selectedDungeon, nil,
                     quest and { id = quest.id, name = quest.name } or nil)
             end
             return
@@ -3460,7 +3461,7 @@ end
 
 local function UpdateModeTabs()
     if not frame or not frame.bossesTab or not frame.questsTab then return end
-    local theme = THEMES[selectedDungeon] or THEMES.default
+    local theme = THEMES[SMJ._J.selectedDungeon] or THEMES.default
     local mapActive = frame.dungeonMapPanel and frame.dungeonMapPanel:IsShown() or false
     local routeActive = frame.routePanel and frame.routePanel:IsShown() or false
     local function style(tab, active)
@@ -3475,8 +3476,8 @@ local function UpdateModeTabs()
             if tab.text then tab.text:SetTextColor(1.00, 0.82, 0.27) end
         end
     end
-    style(frame.bossesTab, (not mapActive) and (not routeActive) and selectedMode == "bosses")
-    style(frame.questsTab, (not mapActive) and (not routeActive) and selectedMode == "quests")
+    style(frame.bossesTab, (not mapActive) and (not routeActive) and SMJ._J.selectedMode == "bosses")
+    style(frame.questsTab, (not mapActive) and (not routeActive) and SMJ._J.selectedMode == "quests")
     if frame.mapTab and frame.mapTab:IsShown() then style(frame.mapTab, mapActive) end
     if frame.dungeonRouteButton and frame.dungeonRouteButton:IsShown() then
         style(frame.dungeonRouteButton, routeActive)
@@ -3486,7 +3487,7 @@ end
 local function UpdateDungeonHeaderTabs()
     if not frame or not frame.bossesTab or not frame.questsTab then return end
 
-    local currentDungeon = DB[selectedDungeon]
+    local currentDungeon = DB[SMJ._J.selectedDungeon]
     if currentDungeon and (currentDungeon.recipeSearch or currentDungeon.lootFilterPage) then
         frame.questsTab:Hide()
         frame.bossesTab:Show()
@@ -3520,7 +3521,7 @@ local function UpdateDungeonHeaderTabs()
 
     if frame.dungeonMapPanel then frame.dungeonMapPanel:Hide() end
     if frame.mapTab then
-        if SMJ.DUNGEON_MAPS[selectedDungeon] then
+        if SMJ.DUNGEON_MAPS[SMJ._J.selectedDungeon] then
             frame.mapTab:ClearAllPoints()
             frame.mapTab:SetSize(108, 30)
             -- Keep Map in its original tab slot: immediately left of Bosses.
@@ -3533,7 +3534,7 @@ local function UpdateDungeonHeaderTabs()
         end
     end
     -- Announced dungeons: no boss or quest pages, so Map is the only tab.
-    if currentDungeon and currentDungeon.previewOnly and frame.mapTab and SMJ.DUNGEON_MAPS[selectedDungeon] then
+    if currentDungeon and currentDungeon.previewOnly and frame.mapTab and SMJ.DUNGEON_MAPS[SMJ._J.selectedDungeon] then
         frame.bossesTab:Hide()
         frame.questsTab:Hide()
         frame.mapTab:ClearAllPoints()
@@ -3630,7 +3631,7 @@ local function UpdateFactionButtons()
         return
     end
 
-    local theme = THEMES[selectedDungeon] or THEMES.default
+    local theme = THEMES[SMJ._J.selectedDungeon] or THEMES.default
 
     local function Style(button, active, faction)
         if active then
@@ -3644,21 +3645,21 @@ local function UpdateFactionButtons()
         end
     end
 
-    Style(frame.allianceQuestButton, selectedQuestFaction == "Alliance", "Alliance")
-    Style(frame.hordeQuestButton, selectedQuestFaction == "Horde", "Horde")
+    Style(frame.allianceQuestButton, SMJ._J.selectedQuestFaction == "Alliance", "Alliance")
+    Style(frame.hordeQuestButton, SMJ._J.selectedQuestFaction == "Horde", "Horde")
 end
 
 local function BuildVisibleQuestIndexes()
     wipe(visibleQuestIndexes)
 
-    local dungeon = DB[selectedDungeon]
+    local dungeon = DB[SMJ._J.selectedDungeon]
     local quests = dungeon.quests or {}
 
     -- Repeatable quests (librams...) sit under a folded divider at the end of
     -- the list and never count towards the quest totals.
     local repeatables = {}
     for index, quest in ipairs(quests) do
-        if QuestMatchesFaction(quest, selectedQuestFaction) and not quest.hideFromMainList then
+        if QuestMatchesFaction(quest, SMJ._J.selectedQuestFaction) and not quest.hideFromMainList then
             if quest.repeatable then
                 repeatables[#repeatables + 1] = index
             else
@@ -3685,7 +3686,7 @@ local function BuildVisibleQuestIndexes()
     -- without adding it back to the normal quest list.
     if not selectedVisible and allowHiddenQuestSelection then
         local selected = quests[selectedQuest]
-        if selected and selected.hideFromMainList and QuestMatchesFaction(selected, selectedQuestFaction) then
+        if selected and selected.hideFromMainList and QuestMatchesFaction(selected, SMJ._J.selectedQuestFaction) then
             selectedVisible = true
         end
     end
@@ -3700,9 +3701,9 @@ end
 RefreshQuestList = function()
     if not frame or not frame.questContent then return end
 
-    local dungeon = DB[selectedDungeon]
+    local dungeon = DB[SMJ._J.selectedDungeon]
     local quests = dungeon.quests or {}
-    local theme = THEMES[selectedDungeon] or THEMES.default
+    local theme = THEMES[SMJ._J.selectedDungeon] or THEMES.default
 
     BuildVisibleQuestIndexes()
     UpdateFactionButtons()
@@ -3790,7 +3791,7 @@ RefreshQuestList = function()
             local rowIconOffset = (button.meta:GetStringWidth() or 0) + 6
             if chain and button.chainToggle then rowIconOffset = rowIconOffset + (button.chainToggle:GetWidth() or 20) + 4 end
             SMJ.SetRowDungeonIcon(button, quest.startsInDungeon or ((not chain) and (SMJ.StartsInsideDungeon(quest.pickup)
-                or SMJ.StartItemDropsIn(quest, selectedDungeon))), rowIconOffset)
+                or SMJ.StartItemDropsIn(quest, SMJ._J.selectedDungeon))), rowIconOffset)
             -- With a chain control, the faction icons leave no room to its
             -- right: stack the dungeon icon on top of the chain control.
             if chain and button.chainToggle and button.dungeonStartIcon and button.dungeonStartIcon:IsShown() then
@@ -4060,7 +4061,7 @@ RefreshQuestList = function()
     contentHeight = math.max(1, contentHeight - 3)
     frame.questContent:SetHeight(contentHeight)
     UpdateScrollBarVisibility(frame.questListScroll, contentHeight)
-    if SMJ.UpdateQuestTrackButton then SMJ.UpdateQuestTrackButton(selectedDungeon) end -- questtracker
+    if SMJ.UpdateQuestTrackButton then SMJ.UpdateQuestTrackButton(SMJ._J.selectedDungeon) end -- questtracker
 end
 
 local function GetQuestLogIndexForQuestIDSafe(questID)
@@ -4261,7 +4262,7 @@ end
 
 SMJ.PlaceStepItemButtons = function(items, startIndex, cursorY, width)
     frame.questStepItemButtons = frame.questStepItemButtons or {}
-    local theme = THEMES[selectedDungeon] or THEMES.default
+    local theme = THEMES[SMJ._J.selectedDungeon] or THEMES.default
     for i, item in ipairs(items) do
         local index = startIndex + i
         local button = frame.questStepItemButtons[index]
@@ -4555,7 +4556,7 @@ local function RefreshPrerequisiteQuestDetail(step)
             frame.questStartItemButton.icon:SetTexture(obj[2] or "Interface\\Icons\\INV_Misc_QuestionMark")
             frame.questStartItemButton.name:SetText(FreeText(obj[1]))
             frame.questStartItemButton.name:SetTextColor(1, 1, 1)
-            local objTheme = THEMES[selectedDungeon] or THEMES.default
+            local objTheme = THEMES[SMJ._J.selectedDungeon] or THEMES.default
             frame.questStartItemButton:SetBackdropColor(unpack(objTheme.lootRow))
             frame.questStartItemButton:SetBackdropBorderColor(unpack(objTheme.border))
             frame.questStartItemButton:SetPoint("TOPLEFT", frame.questDetailContent, "TOPLEFT", 0, -cursorY)
@@ -4578,7 +4579,7 @@ local function RefreshPrerequisiteQuestDetail(step)
             local itemName = ItemInfo(startItem[1])
             frame.questStartItemButton.name:SetText(itemName or startItem[2])
             frame.questStartItemButton.name:SetTextColor(1, 1, 1)
-            local itemTheme = THEMES[selectedDungeon] or THEMES.default
+            local itemTheme = THEMES[SMJ._J.selectedDungeon] or THEMES.default
             frame.questStartItemButton:SetBackdropColor(unpack(itemTheme.lootRow))
             frame.questStartItemButton:SetBackdropBorderColor(unpack(itemTheme.border))
             frame.questStartItemButton:SetPoint("TOPLEFT", frame.questDetailContent, "TOPLEFT", 0, -cursorY)
@@ -4736,7 +4737,7 @@ local function RefreshPrerequisiteQuestDetail(step)
                 local r, g, b = GetAuthoritativeItemQuality(item[1], itemLink, quality, item[3] or 1)
                 button.name:SetText(itemName or item[2])
                 button.name:SetTextColor(r, g, b)
-                local theme = THEMES[selectedDungeon] or THEMES.default
+                local theme = THEMES[SMJ._J.selectedDungeon] or THEMES.default
                 button:SetBackdropColor(unpack(theme.lootRow))
                 button:SetBackdropBorderColor(unpack(theme.border))
 
@@ -4802,7 +4803,7 @@ local function RefreshPrerequisiteQuestDetail(step)
     end
 
     frame.questDetailContent:SetHeight(math.max(1, cursorY))
-    SMJ.ApplyQuestDetailScroll("step:" .. tostring(selectedDungeon) .. ":" .. tostring(selectedPrereqParentQuestID) .. ":" .. tostring(step.id or step.name), cursorY)
+    SMJ.ApplyQuestDetailScroll("step:" .. tostring(SMJ._J.selectedDungeon) .. ":" .. tostring(selectedPrereqParentQuestID) .. ":" .. tostring(step.id or step.name), cursorY)
     UpdateScrollBarVisibility(frame.questDetailScroll, cursorY)
     return true
 end
@@ -4825,13 +4826,13 @@ RefreshQuestDetail = function()
     if frame.questPrevStepButton then frame.questPrevStepButton:Hide() end
     if frame.questNextStepButton then frame.questNextStepButton:Hide() end
 
-    local dungeon = DB[selectedDungeon]
+    local dungeon = DB[SMJ._J.selectedDungeon]
     local quest = dungeon.quests and dungeon.quests[selectedQuest]
-    if not quest or not QuestMatchesFaction(quest, selectedQuestFaction) then
+    if not quest or not QuestMatchesFaction(quest, SMJ._J.selectedQuestFaction) then
         BuildVisibleQuestIndexes()
         quest = dungeon.quests and dungeon.quests[selectedQuest]
     end
-    if not quest or not QuestMatchesFaction(quest, selectedQuestFaction) then
+    if not quest or not QuestMatchesFaction(quest, SMJ._J.selectedQuestFaction) then
         frame.selectedQuestName:SetText(L("NO_QUESTS"))
         frame.selectedQuestMeta:SetText("")
         if frame.selectedQuestClass then frame.selectedQuestClass:Hide() end
@@ -4842,7 +4843,7 @@ RefreshQuestDetail = function()
         if frame.questShareButton then frame.questShareButton.questID = nil; frame.questShareButton:Hide() end
         if frame.questDetailScroll then frame.questDetailScroll:Hide() end
         if frame.noQuestMessage then
-            frame.noQuestMessage:SetText(L("NO_FACTION_QUESTS", selectedQuestFaction))
+            frame.noQuestMessage:SetText(L("NO_FACTION_QUESTS", SMJ._J.selectedQuestFaction))
             frame.noQuestMessage:Show()
         end
         frame.questDetailText:SetText("")
@@ -4886,7 +4887,7 @@ RefreshQuestDetail = function()
     if frame.questTurninText then frame.questTurninText:SetWidth(detailWidth) end
     if frame.questNotesText then frame.questNotesText:SetWidth(detailWidth) end
     local rewardWidth = math.floor((detailWidth - 10) / 2)
-    local theme = THEMES[selectedDungeon] or THEMES.default
+    local theme = THEMES[SMJ._J.selectedDungeon] or THEMES.default
     local complete = IsQuestFinished(quest.id)
 
     frame.selectedQuestName:SetText(QuestField(quest.id, "name", quest.name))
@@ -5097,7 +5098,7 @@ RefreshQuestDetail = function()
         frame.questStartItemButton:Show()
         if frame.questStartDungeonIcon then
             frame.questStartDungeonIcon:Hide()
-            if quest.startsInDungeon or ((SMJ.StartsInsideDungeon(quest.pickup) or SMJ.StartItemDropsIn(quest, selectedDungeon))
+            if quest.startsInDungeon or ((SMJ.StartsInsideDungeon(quest.pickup) or SMJ.StartItemDropsIn(quest, SMJ._J.selectedDungeon))
                 and not QUEST_PREREQ_CHAINS[quest.id]) then SMJ.PositionInDungeonIcon() end
         end
         cursorY = cursorY + 44
@@ -5120,7 +5121,7 @@ RefreshQuestDetail = function()
         frame.questStartItemButton:Show()
         if frame.questStartDungeonIcon then
             frame.questStartDungeonIcon:Hide()
-            if quest.startsInDungeon or ((SMJ.StartsInsideDungeon(quest.pickup) or SMJ.StartItemDropsIn(quest, selectedDungeon))
+            if quest.startsInDungeon or ((SMJ.StartsInsideDungeon(quest.pickup) or SMJ.StartItemDropsIn(quest, SMJ._J.selectedDungeon))
                 and not QUEST_PREREQ_CHAINS[quest.id]) then SMJ.PositionInDungeonIcon() end
         end
         cursorY = cursorY + 44
@@ -5261,11 +5262,11 @@ RefreshQuestDetail = function()
     local noteText = quest.note
     if noteQuestLink and noteQuestLink.id then
         local linked
-        for _, other in ipairs((DB[selectedDungeon] and DB[selectedDungeon].quests) or {}) do
+        for _, other in ipairs((DB[SMJ._J.selectedDungeon] and DB[SMJ._J.selectedDungeon].quests) or {}) do
             if other.id == noteQuestLink.id then linked = other break end
         end
         -- Compare with the faction tab being browsed, not the character's faction.
-        local viewFaction = selectedQuestFaction
+        local viewFaction = SMJ._J.selectedQuestFaction
         if linked and (viewFaction == "Alliance" or viewFaction == "Horde")
             and not QuestMatchesFaction(linked, viewFaction) then
             noteQuestLink = nil
@@ -5607,14 +5608,14 @@ RefreshQuestDetail = function()
     local totalHeight = summaryY + summaryHeight + 18
 
     frame.questDetailContent:SetHeight(math.max(1, totalHeight))
-    SMJ.ApplyQuestDetailScroll("quest:" .. tostring(selectedDungeon) .. ":" .. tostring(selectedQuestFaction) .. ":" .. tostring(quest.id or quest.name), totalHeight)
+    SMJ.ApplyQuestDetailScroll("quest:" .. tostring(SMJ._J.selectedDungeon) .. ":" .. tostring(SMJ._J.selectedQuestFaction) .. ":" .. tostring(quest.id or quest.name), totalHeight)
     UpdateScrollBarVisibility(frame.questDetailScroll, totalHeight)
 end
 
 SetQuestFaction = function(faction)
     if faction ~= "Alliance" and faction ~= "Horde" then return end
 
-    selectedQuestFaction = faction
+    SMJ._J.selectedQuestFaction = faction
     selectedPrereqStep = nil
     selectedPrereqParentQuestName = nil
     selectedPrereqParentQuestID = nil
@@ -5634,7 +5635,7 @@ end
 
 ShowRouteGuide = function()
     if not frame then return end
-    local dungeon = DB[selectedDungeon]
+    local dungeon = DB[SMJ._J.selectedDungeon]
     local route = dungeon and dungeon.routeGuide
     if not route or not frame.routePanel then return end
 
@@ -5705,7 +5706,7 @@ ShowRouteGuide = function()
                 row.mapButton:SetText(L("SHOW_ON_MAP"))
                 row.mapButton:SetScript("OnClick", function(self)
                     if self.showsRoute then
-                        local d = DB[selectedDungeon]
+                        local d = DB[SMJ._J.selectedDungeon]
                         local r = d and d.routeGuide
                         if r and r.mapRoute and ShowRouteOnMap then ShowRouteOnMap(r.mapRoute) end
                     elseif self.mapLocation then
@@ -5832,7 +5833,7 @@ local function RenderRagefireMap()
         end
     end
 
-    local dungeon = DB[selectedDungeon]
+    local dungeon = DB[SMJ._J.selectedDungeon]
     for i, mapBoss in ipairs(data.bosses) do
         local marker = frame.dungeonMapBossMarkers[i]
         if not marker then
@@ -5858,7 +5859,7 @@ local function RenderRagefireMap()
             if candidate.name == mapBoss.name then bossRecord = candidate break end
         end
         if bossRecord then
-            local hasPortrait = SetBossPortrait(marker.portrait, selectedDungeon, bossRecord)
+            local hasPortrait = SetBossPortrait(marker.portrait, SMJ._J.selectedDungeon, bossRecord)
             if not hasPortrait then
                 marker.portrait:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
                 marker.portrait:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -5906,7 +5907,7 @@ SMJ.SetupDungeonMapZoom = function()
     panel:EnableMouse(true)
     panel:EnableMouseWheel(true)
     panel:SetScript("OnMouseWheel", function(self, delta)
-        local data = SMJ.DUNGEON_MAPS[selectedDungeon]
+        local data = SMJ.DUNGEON_MAPS[SMJ._J.selectedDungeon]
         if not data then return end
         local old = frame.dungeonMapZoom or 1
         local new = math.max(1, math.min(4, old * (delta > 0 and 1.25 or 0.8)))
@@ -5974,9 +5975,9 @@ SMJ.RenderCustomDungeonMap = function(data, floorIndex)
     floorIndex = math.max(1, math.min(#floors, floorIndex or (data.entrance and data.entrance.floor) or 1))
     frame.dungeonMapFloor = floorIndex
     -- Remember the floor per dungeon so the map reopens where it was left.
-    if selectedDungeon and DB[selectedDungeon] then
+    if SMJ._J.selectedDungeon and DB[SMJ._J.selectedDungeon] then
         SentinelMentorJournalDB.mapFloors = SentinelMentorJournalDB.mapFloors or {}
-        SentinelMentorJournalDB.mapFloors[selectedDungeon] = floorIndex
+        SentinelMentorJournalDB.mapFloors[SMJ._J.selectedDungeon] = floorIndex
     end
     local floorData = floors[floorIndex]
     if not floorData then return end
@@ -6029,7 +6030,7 @@ SMJ.RenderCustomDungeonMap = function(data, floorIndex)
             -- map found by the dungeon's name (see Systems/MapArtFinder.lua).
             for attempt = 1, 2 do
                 local mapID = floorData.uiMapID
-                if attempt == 2 then mapID = SMJ.FindMapArtID and SMJ.FindMapArtID(selectedDungeon, floorData) end
+                if attempt == 2 then mapID = SMJ.FindMapArtID and SMJ.FindMapArtID(SMJ._J.selectedDungeon, floorData) end
                 if not mapID or (attempt == 2 and mapID == floorData.uiMapID) then break end
                 local okLayers, layers = pcall(C_Map.GetMapArtLayers, mapID)
                 if okLayers and type(layers) == "table" and layers[1] then
@@ -6148,7 +6149,7 @@ SMJ.RenderCustomDungeonMap = function(data, floorIndex)
                 btn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
                 btn:SetScript("OnClick", function(self)
                     SMJ.ResetDungeonMapView()
-                    SMJ.RenderCustomDungeonMap(SMJ.DUNGEON_MAPS[selectedDungeon], self.floorIndex)
+                    SMJ.RenderCustomDungeonMap(SMJ.DUNGEON_MAPS[SMJ._J.selectedDungeon], self.floorIndex)
                 end)
                 frame.dungeonMapFloorButtons[i] = btn
             end
@@ -6167,7 +6168,7 @@ SMJ.RenderCustomDungeonMap = function(data, floorIndex)
     end
 
     if SMJ.UpdateMapBossSizer then pcall(SMJ.UpdateMapBossSizer, panel, holder, frame.dungeonMapFloorButtons) end
-    local dungeon = DB[selectedDungeon]
+    local dungeon = DB[SMJ._J.selectedDungeon]
     local size = math.floor(math.max(26, math.floor(baseH * 0.095)) * (SMJ.MapBossScale and SMJ.MapBossScale() or 1))
     local shown = 0
     for _, mapBoss in ipairs(data.bosses or {}) do
@@ -6201,12 +6202,12 @@ SMJ.RenderCustomDungeonMap = function(data, floorIndex)
             end
             marker.portrait:SetTexCoord(0, 1, 0, 1)
             local portraitRecord = bossRecord or (mapBoss.npcID and { name = mapBoss.name, npcID = mapBoss.npcID })
-            if not (portraitRecord and SetBossPortrait(marker.portrait, selectedDungeon, portraitRecord)) then
+            if not (portraitRecord and SetBossPortrait(marker.portrait, SMJ._J.selectedDungeon, portraitRecord)) then
                 marker.portrait:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
                 marker.portrait:SetTexCoord(0.08, 0.92, 0.08, 0.92)
             end
             marker.bossName = bossRecord and BossName(bossRecord.name) or mapBoss.name
-            local markerDungeon = selectedDungeon
+            local markerDungeon = SMJ._J.selectedDungeon
             marker:SetScript("OnClick", function()
                 if not bossIndex then return end
                 -- On the world map (dungeon map shown over the M map): close
@@ -6309,7 +6310,7 @@ SMJ.RenderCustomDungeonMap = function(data, floorIndex)
                 t:SetScript("OnClick", function(self)
                     if not self.toFloor then return end
                     SMJ.ResetDungeonMapView()
-                    SMJ.RenderCustomDungeonMap(SMJ.DUNGEON_MAPS[selectedDungeon], self.toFloor)
+                    SMJ.RenderCustomDungeonMap(SMJ.DUNGEON_MAPS[SMJ._J.selectedDungeon], self.toFloor)
                 end)
                 t:SetScript("OnEnter", function(self)
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -6441,7 +6442,7 @@ HideDungeonMap = function()
 end
 
 ShowDungeonMap = function()
-    if not frame or not SMJ.DUNGEON_MAPS[selectedDungeon] then return end
+    if not frame or not SMJ.DUNGEON_MAPS[SMJ._J.selectedDungeon] then return end
     -- The map panel may be lent to the world map (M): take it back first.
     if SMJ.DetachWorldMapOverlay then pcall(SMJ.DetachWorldMapOverlay) end
     HideRouteGuide()
@@ -6451,10 +6452,10 @@ ShowDungeonMap = function()
     frame.questRightPanel:Hide()
     frame.dungeonMapTitle:SetText("")
     frame.dungeonMapPanel:Show()
-    local mapData = SMJ.DUNGEON_MAPS[selectedDungeon]
+    local mapData = SMJ.DUNGEON_MAPS[SMJ._J.selectedDungeon]
     SMJ.SetupDungeonMapZoom()
     SMJ.ResetDungeonMapView()
-    SMJ.RenderCustomDungeonMap(mapData, SMJ.SavedMapFloor(selectedDungeon, mapData))
+    SMJ.RenderCustomDungeonMap(mapData, SMJ.SavedMapFloor(SMJ._J.selectedDungeon, mapData))
     UpdateModeTabs()
 end
 
@@ -6467,7 +6468,7 @@ SetMode = function(mode)
         ResetPortraitResolver()
     end
 
-    selectedMode = mode
+    SMJ._J.selectedMode = mode
     SentinelMentorJournalDB.lastMode = mode
 
     -- Every time the quest tab is opened, start on the player's own faction.
@@ -6478,11 +6479,11 @@ SetMode = function(mode)
     elseif mode == "quests" and UnitFactionGroup then
         local playerFaction = UnitFactionGroup("player")
         if playerFaction == "Horde" then
-            selectedQuestFaction = "Horde"
+            SMJ._J.selectedQuestFaction = "Horde"
         elseif playerFaction == "Alliance" then
-            selectedQuestFaction = "Alliance"
+            SMJ._J.selectedQuestFaction = "Alliance"
         end
-        SentinelMentorJournalDB.questFaction = selectedQuestFaction
+        SentinelMentorJournalDB.questFaction = SMJ._J.selectedQuestFaction
         selectedPrereqStep = nil
         selectedPrereqParentQuestName = nil
         selectedPrereqParentQuestID = nil
@@ -6504,7 +6505,7 @@ SetMode = function(mode)
         RefreshBossList()
         RefreshLoot()
     else
-        local quests = DB[selectedDungeon].quests or {}
+        local quests = DB[SMJ._J.selectedDungeon].quests or {}
         if selectedQuest > #quests then selectedQuest = 1 end
 
         for _, quest in ipairs(quests) do
@@ -6517,7 +6518,7 @@ SetMode = function(mode)
 end
 
 SelectQuest = function(index, allowHidden)
-    local quests = DB[selectedDungeon].quests or {}
+    local quests = DB[SMJ._J.selectedDungeon].quests or {}
     if not quests[index] then return end
 
     allowHiddenQuestSelection = allowHidden == true
@@ -6534,7 +6535,7 @@ end
 
 SelectQuestByID = function(questID)
     if not questID then return end
-    local quests = DB[selectedDungeon].quests or {}
+    local quests = DB[SMJ._J.selectedDungeon].quests or {}
     for index, quest in ipairs(quests) do
         if quest.id == questID then
             SelectQuest(index, quest.hideFromMainList == true)
@@ -6571,7 +6572,7 @@ end
 
 local function UpdateTabs()
     for name, tab in pairs(dungeonTabs) do
-        if name == selectedDungeon then
+        if name == SMJ._J.selectedDungeon then
             tab:SetBackdropColor(0.43, 0.23, 0.07, 1)
             tab.text:SetTextColor(1, 0.82, 0.27)
         else
@@ -6951,7 +6952,7 @@ RefreshHomeDungeonCards = function()
 end
 
 RefreshBossList = function()
-    local dungeon = DB[selectedDungeon]
+    local dungeon = DB[SMJ._J.selectedDungeon]
 
     for i = 1, math.max(#bossButtons, #dungeon.bosses) do
         local button = bossButtons[i]
@@ -7000,12 +7001,12 @@ RefreshBossList = function()
 
             local hasPortrait = SetBossPortrait(
                 button.portrait,
-                selectedDungeon,
+                SMJ._J.selectedDungeon,
                 boss
             )
             button.question:SetShown(not hasPortrait)
 
-            local bossLevel = BossLevelText(selectedDungeon, boss)
+            local bossLevel = BossLevelText(SMJ._J.selectedDungeon, boss)
             if bossLevel then
                 button.levelText:SetText(bossLevel)
                 FitBossLevelText(button.levelText, bossLevel)
@@ -7016,9 +7017,9 @@ RefreshBossList = function()
                 button.levelText:Hide()
             end
 
-            local theme = THEMES[selectedDungeon] or THEMES.default
+            local theme = THEMES[SMJ._J.selectedDungeon] or THEMES.default
 
-            if selectedBoss == i then
+            if SMJ._J.selectedBoss == i then
                 button:SetBackdropColor(unpack(theme.rowSelected))
                 button:SetBackdropBorderColor(unpack(theme.border))
                 button.name:SetTextColor(unpack(theme.title))
@@ -7063,26 +7064,26 @@ end
 
 RefreshLoot = function()
     for _, row in ipairs(lootRows) do HideSearchItemHighlight(row) end
-    local dungeon = DB[selectedDungeon]
-    local boss = dungeon.bosses[selectedBoss]
+    local dungeon = DB[SMJ._J.selectedDungeon]
+    local boss = dungeon.bosses[SMJ._J.selectedBoss]
     if SMJ.FilterBossLoot then
         boss = SMJ.FilterBossLootForPage(boss)
         SMJ.UpdateLootFilterNote(frame)
     end
 
-    local isStockade = SMJ.ShowsItemsTBD(selectedDungeon)
+    local isStockade = SMJ.ShowsItemsTBD(SMJ._J.selectedDungeon)
     -- "Full Items Data TBD" stays under the dungeon title; the boss loot page
     -- shows its own copy for dungeons with no loot data yet, and for any boss
     -- of a TBD dungeon that has no loot listed (before the loot filter).
-    local rawBoss = dungeon.bosses[selectedBoss]
+    local rawBoss = dungeon.bosses[SMJ._J.selectedBoss]
     local bossHasLoot = rawBoss and rawBoss.loot and #rawBoss.loot > 0
     local lootTBD = isStockade and (not (dungeon and dungeon.fullItemsTBD) or not bossHasLoot)
     if frame.stockadeItemsTBD then
-        frame.stockadeItemsTBD:SetText(SMJ.ItemsTBDText(selectedDungeon))
+        frame.stockadeItemsTBD:SetText(SMJ.ItemsTBDText(SMJ._J.selectedDungeon))
         frame.stockadeItemsTBD:SetShown(isStockade)
     end
     if frame.stockadeLootTBD then
-        frame.stockadeLootTBD:SetText(SMJ.ItemsTBDText(selectedDungeon))
+        frame.stockadeLootTBD:SetText(SMJ.ItemsTBDText(SMJ._J.selectedDungeon))
         frame.stockadeLootTBD:SetShown(lootTBD)
     end
 
@@ -7110,12 +7111,12 @@ RefreshLoot = function()
 
     local hasPortrait = SetBossPortrait(
         frame.selectedBossPortrait,
-        selectedDungeon,
+        SMJ._J.selectedDungeon,
         boss
     )
     frame.selectedBossQuestion:SetShown(not hasPortrait)
 
-    local bossLevel = BossLevelText(selectedDungeon, boss)
+    local bossLevel = BossLevelText(SMJ._J.selectedDungeon, boss)
     if frame.selectedBossLevelBadge and frame.selectedBossLevelText then
         if bossLevel then
             frame.selectedBossLevelText:SetText(bossLevel)
@@ -7141,7 +7142,7 @@ RefreshLoot = function()
     local loot = {}
     for _, item in ipairs(boss.loot) do loot[#loot + 1] = item end
     local ownCount = #loot
-    local sharedList = SMJ.GetBossSharedLoot and SMJ.GetBossSharedLoot(selectedDungeon, boss) or nil
+    local sharedList = SMJ.GetBossSharedLoot and SMJ.GetBossSharedLoot(SMJ._J.selectedDungeon, boss) or nil
     local sharedCount = sharedList and #sharedList or 0
     if sharedCount > 0 and SMJ.lootSharedExpanded then
         for _, item in ipairs(sharedList) do loot[#loot + 1] = item end
@@ -7253,7 +7254,7 @@ RefreshLoot = function()
 
             local item = loot[i]
             row.item = item
-            row.fdjDungeonName = selectedDungeon
+            row.fdjDungeonName = SMJ._J.selectedDungeon
             row.fdjBossName = boss.name
             row.icon:SetTexture(ItemIcon(item[1]))
             if SMJ.UpdateFavouriteIndicator then SMJ.UpdateFavouriteIndicator(row, item[1]) end
@@ -7317,7 +7318,7 @@ RefreshLoot = function()
                 row.slot:SetPoint("RIGHT", inset, 0)
             end
 
-            local theme = THEMES[selectedDungeon] or THEMES.default
+            local theme = THEMES[SMJ._J.selectedDungeon] or THEMES.default
             row:SetBackdropColor(unpack(theme.lootRow))
             row:SetBackdropBorderColor(unpack(theme.border))
             row.slot:SetTextColor(unpack(theme.muted))
@@ -7481,7 +7482,7 @@ end
 local function ApplyTheme()
     if not frame then return end
 
-    local theme = THEMES[selectedDungeon] or THEMES.default
+    local theme = THEMES[SMJ._J.selectedDungeon] or THEMES.default
 
     frame:SetBackdropColor(unpack(theme.frame))
     frame.contentPanel:SetBackdropColor(unpack(theme.content))
@@ -7526,13 +7527,13 @@ local function ApplyTheme()
     if frame.bossListTitle then frame.bossListTitle:SetTextColor(unpack(theme.text)) end
     if frame.questListTitle then frame.questListTitle:SetTextColor(unpack(theme.text)) end
 
-    local ruins = selectedDungeon == "Ruins of Lordaeron"
-    local hall = selectedDungeon == "Hall of Thanes"
-    local bfd = selectedDungeon == "Blackfathom Deeps"
+    local ruins = SMJ._J.selectedDungeon == "Ruins of Lordaeron"
+    local hall = SMJ._J.selectedDungeon == "Hall of Thanes"
+    local bfd = SMJ._J.selectedDungeon == "Blackfathom Deeps"
 
     if frame.dungeonBackgroundArt then
-        local bg = DUNGEON_PAGE_ART[selectedDungeon]
-        local crop = DUNGEON_PAGE_TEXCOORD[selectedDungeon] or { 0.03, 0.97, 0.05, 0.95 }
+        local bg = DUNGEON_PAGE_ART[SMJ._J.selectedDungeon]
+        local crop = DUNGEON_PAGE_TEXCOORD[SMJ._J.selectedDungeon] or { 0.03, 0.97, 0.05, 0.95 }
         if bg then
             frame.dungeonBackgroundArt:SetTexture(bg)
             frame.dungeonBackgroundArt:SetTexCoord(crop[1], crop[2], crop[3], crop[4])
@@ -7676,11 +7677,11 @@ end
 
 RefreshAll = function()
     ApplyLocalization()
-    local dungeon = DB[selectedDungeon]
+    local dungeon = DB[SMJ._J.selectedDungeon]
 
     ApplyTheme()
 
-    frame.dungeonTitle:SetText(dungeon.recipeSearchTitle or DungeonName(selectedDungeon))
+    frame.dungeonTitle:SetText(dungeon.recipeSearchTitle or DungeonName(SMJ._J.selectedDungeon))
     -- "Matching loot" has no level line: larger title, centred in the header box.
     do
         local t = frame.dungeonTitle
@@ -7703,7 +7704,7 @@ RefreshAll = function()
     if frame.dungeonLocationButton then
         frame.dungeonLocationButton:SetShown(dungeon.entrance ~= nil)
     end
-    if SMJ.UpdateLFGButton then SMJ.UpdateLFGButton(frame, selectedDungeon, dungeon) end
+    if SMJ.UpdateLFGButton then SMJ.UpdateLFGButton(frame, SMJ._J.selectedDungeon, dungeon) end
     if frame.dungeonRouteButton then
         local route = dungeon.routeGuide
         local playerFaction = UnitFactionGroup and UnitFactionGroup("player") or nil
@@ -7719,8 +7720,8 @@ RefreshAll = function()
         if allowed then frame.dungeonRouteButton:SetText(L("ROUTE")) end
     end
     if frame.stockadeItemsTBD then
-        frame.stockadeItemsTBD:SetText(SMJ.ItemsTBDText(selectedDungeon))
-        frame.stockadeItemsTBD:SetShown(SMJ.ShowsItemsTBD(selectedDungeon))
+        frame.stockadeItemsTBD:SetText(SMJ.ItemsTBDText(SMJ._J.selectedDungeon))
+        frame.stockadeItemsTBD:SetShown(SMJ.ShowsItemsTBD(SMJ._J.selectedDungeon))
     end
 
     UpdateDungeonHeaderTabs()
@@ -7728,30 +7729,30 @@ RefreshAll = function()
 
     local quests = dungeon.quests or {}
     if selectedQuest > #quests then selectedQuest = 1 end
-    if selectedBoss > #dungeon.bosses then selectedBoss = 1 end
+    if SMJ._J.selectedBoss > #dungeon.bosses then SMJ._J.selectedBoss = 1 end
 
-    if dungeon.previewOnly and SMJ.DUNGEON_MAPS[selectedDungeon] and ShowDungeonMap then
+    if dungeon.previewOnly and SMJ.DUNGEON_MAPS[SMJ._J.selectedDungeon] and ShowDungeonMap then
         ShowDungeonMap()
         return
     end
-    SetMode(selectedMode)
+    SetMode(SMJ._J.selectedMode)
 end
 
-SMJ.GetSelectedDungeon = function() return selectedDungeon, selectedBoss end
+SMJ.GetSelectedDungeon = function() return SMJ._J.selectedDungeon, SMJ._J.selectedBoss end
 -- Used by the world-map overlay: point the map renderer at a dungeon without
 -- touching the journal window.
-SMJ.SetMapDungeon = function(name) if DB[name] then selectedDungeon = name end end
+SMJ.SetMapDungeon = function(name) if DB[name] then SMJ._J.selectedDungeon = name end end
 SMJ.ReopenDungeonMap = function(dungeonName)
-    if dungeonName == selectedDungeon and SMJ.DUNGEON_MAPS[dungeonName] then
+    if dungeonName == SMJ._J.selectedDungeon and SMJ.DUNGEON_MAPS[dungeonName] then
         pcall(ShowDungeonMap)
     end
 end
 
 SelectBoss = function(index)
-    local dungeon = DB[selectedDungeon]
+    local dungeon = DB[SMJ._J.selectedDungeon]
     if not dungeon or not dungeon.bosses[index] then return end
 
-    selectedBoss = index
+    SMJ._J.selectedBoss = index
     SentinelMentorJournalDB.lastBoss = index
 
     -- Stay on the SAME page. Only refresh highlight + right-side loot pane.
@@ -7770,14 +7771,14 @@ SelectDungeon = function(name)
     end
 
     ShowDungeonPage()
-    selectedDungeon = name
-    selectedBoss = 1
+    SMJ._J.selectedDungeon = name
+    SMJ._J.selectedBoss = 1
     selectedQuest = 1
 
     local hasCurrentFaction = false
     local fallbackFaction = nil
     for _, q in ipairs(DB[name].quests or {}) do
-        if QuestMatchesFaction(q, selectedQuestFaction) then
+        if QuestMatchesFaction(q, SMJ._J.selectedQuestFaction) then
             hasCurrentFaction = true
             break
         end
@@ -7786,8 +7787,8 @@ SelectDungeon = function(name)
         end
     end
     if not hasCurrentFaction and fallbackFaction then
-        selectedQuestFaction = fallbackFaction
-        SentinelMentorJournalDB.questFaction = selectedQuestFaction
+        SMJ._J.selectedQuestFaction = fallbackFaction
+        SentinelMentorJournalDB.questFaction = SMJ._J.selectedQuestFaction
     end
     SentinelMentorJournalDB.lastDungeon = name
     SentinelMentorJournalDB.lastBoss = 1
@@ -8328,10 +8329,10 @@ local function CreateGlobalSearchUI()
         -- This page intentionally is not added to ORDER and never becomes a
         -- normal dungeon tile. It only exists for the current recipe search.
         ShowDungeonPage()
-        selectedDungeon = pageKey
-        selectedBoss = 1
+        SMJ._J.selectedDungeon = pageKey
+        SMJ._J.selectedBoss = 1
         selectedQuest = 1
-        selectedMode = "bosses"
+        SMJ._J.selectedMode = "bosses"
         if frame.bossListScroll then frame.bossListScroll:SetVerticalScroll(0) end
         if frame.lootScroll then frame.lootScroll:SetVerticalScroll(0) end
         RefreshAll()
@@ -8601,6 +8602,7 @@ local function CreateMainFrame()
         UIParent,
         "BackdropTemplate"
     )
+    SMJ._J.frame = frame
 
     frame:SetSize(850, 590)
     frame:SetPoint("CENTER", 0, 10)
@@ -8851,7 +8853,7 @@ local function CreateMainFrame()
         SMJ.dungeonTurnIns = SMJ.dungeonTurnIns or {}
         SMJ.dungeonTurnIns[mapData] = { floor = floor, x = spot.x, y = spot.y, npc = spot.npc, title = questTitle, questID = questID, start = start and true or nil }
         SelectDungeon(dungeonName)
-        if selectedDungeon ~= dungeonName then return end
+        if SMJ._J.selectedDungeon ~= dungeonName then return end
         ShowDungeonMap()
         if frame.dungeonMapFloor ~= floor then
             SMJ.ResetDungeonMapView()
@@ -8870,7 +8872,7 @@ local function CreateMainFrame()
     SMJ.OpenQuestChainStep = function(dungeonName, questID, stepID)
         if not DB[dungeonName] then return end
         SelectDungeon(dungeonName)
-        if selectedDungeon ~= dungeonName then return end
+        if SMJ._J.selectedDungeon ~= dungeonName then return end
         SetMode("quests")
         if SelectQuestByID then SelectQuestByID(questID) end
         local chain = questID and QUEST_PREREQ_CHAINS[questID]
@@ -8893,7 +8895,7 @@ local function CreateMainFrame()
         RefreshQuestDetail()
     end
     SMJ.RefreshLootNow = function()
-        if selectedDungeon and DB[selectedDungeon] and frame.lootContent then pcall(RefreshLoot) end
+        if SMJ._J.selectedDungeon and DB[SMJ._J.selectedDungeon] and frame.lootContent then pcall(RefreshLoot) end
     end
     if SMJ.CreateLootFilterButton then SMJ.CreateLootFilterButton(frame, home, hideDungeonsButton) end
     if SMJ.CreateBugReportButton then SMJ.CreateBugReportButton(frame, frame, frame.languageSelectorButton) end
@@ -9010,10 +9012,10 @@ local function CreateMainFrame()
     end)
     frame.dungeonLocationButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
     frame.dungeonLocationButton:SetScript("OnClick", function()
-        local dungeon = DB[selectedDungeon]
+        local dungeon = DB[SMJ._J.selectedDungeon]
         local entrance = dungeon and dungeon.entrance
         if entrance and SMJ.MapMarkers and SMJ.MapMarkers.ShowRecordedLocationOnMap then
-            SMJ.MapMarkers.ShowRecordedLocationOnMap(entrance, DungeonName(selectedDungeon))
+            SMJ.MapMarkers.ShowRecordedLocationOnMap(entrance, DungeonName(SMJ._J.selectedDungeon))
         end
     end)
     if SMJ.CreateLFGButton then SMJ.CreateLFGButton(frame, header, frame.dungeonLocationButton) end
@@ -10025,7 +10027,7 @@ local function CreateMainFrame()
     frame.routeMapButton:SetPoint("TOPRIGHT", -118, -20)
     frame.routeMapButton:SetText(L("SHOW_ON_MAP"))
     frame.routeMapButton:SetScript("OnClick", function()
-        local dungeon = DB[selectedDungeon]
+        local dungeon = DB[SMJ._J.selectedDungeon]
         local route = dungeon and dungeon.routeGuide
         if route and route.mapRoute and ShowRouteOnMap then
             ShowRouteOnMap(route.mapRoute)
@@ -10084,8 +10086,8 @@ local function CreateMainFrame()
     tinsert(UISpecialFrames, frame:GetName())
 
     -- Remember the tab the player came from so right-click can return to it.
-    frame.bossesTab:SetScript("PreClick", function() frame.fdjPrevMode = selectedMode end)
-    frame.questsTab:SetScript("PreClick", function() frame.fdjPrevMode = selectedMode end)
+    frame.bossesTab:SetScript("PreClick", function() frame.fdjPrevMode = SMJ._J.selectedMode end)
+    frame.questsTab:SetScript("PreClick", function() frame.fdjPrevMode = SMJ._J.selectedMode end)
 
     frame:SetScript("OnShow", function()
         if SMJ.InstallRightClickBack then SMJ.InstallRightClickBack() end
@@ -10104,7 +10106,7 @@ local function CreateMainFrame()
         local currentDungeon = CurrentDungeon()
         if currentDungeon and DB[currentDungeon] and not DB[currentDungeon].previewOnly then
             SelectDungeon(currentDungeon)
-        elseif sessionLastView == "dungeon" and DB[selectedDungeon] then
+        elseif sessionLastView == "dungeon" and DB[SMJ._J.selectedDungeon] then
             ShowDungeonPage()
             RefreshAll()
         else
@@ -10157,612 +10159,21 @@ SMJ._minimapUsingLibDBIcon = SMJ._minimapUsingLibDBIcon or false
 SMJ._minimapIconLib = SMJ._minimapIconLib or nil
 SMJ._minimapDataObject = SMJ._minimapDataObject or nil
 
-local function PositionMinimap()
-    if not minimapButton or not Minimap or SMJ._minimapUsingLibDBIcon then return end
-
-    local angle = math.rad(SentinelMentorJournalDB.minimapAngle or 225)
-    local radius = (
-        math.max(Minimap:GetWidth() or 140, Minimap:GetHeight() or 140) * 0.5
-    ) + 8
-
-    minimapButton:ClearAllPoints()
-    minimapButton:SetPoint(
-        "CENTER",
-        Minimap,
-        "CENTER",
-        math.cos(angle) * radius,
-        math.sin(angle) * radius
-    )
-end
-
-local function ToggleJournal()
-    if frame:IsShown() then
-        frame:Hide()
-    else
-        frame:Show()
-    end
-end
-
-SMJ.ToggleJournal = ToggleJournal
-_G.SentinelMentorJournal_Toggle = function()
-    if SMJ.ToggleJournal then
-        SMJ.ToggleJournal()
-    end
-end
-
-local function HideMinimapButton()
-    SentinelMentorJournalDB.minimapHidden = true
-    SentinelMentorJournalDB.minimap = SentinelMentorJournalDB.minimap or {}
-    SentinelMentorJournalDB.minimap.hide = true
-
-    if SMJ._minimapUsingLibDBIcon and SMJ._minimapIconLib then
-        SMJ._minimapIconLib:Hide("SentinelMentor")
-    elseif minimapButton then
-        minimapButton:Hide()
-    end
-
-    print("|cffd8a83cDungeonJournal|r " .. L("MINIMAP_HIDDEN"))
-end
-
--- Right-clicking the minimap button asks first: many players hid it by accident.
-SMJ.HideMinimapButton = HideMinimapButton
-SMJ.ConfirmHideMinimapButton = function()
-    if not StaticPopupDialogs or not StaticPopup_Show then
-        HideMinimapButton()
-        return
-    end
-    StaticPopupDialogs["SENTINELMENTORJOURNAL_HIDE_MINIMAP"] = {
-        text = L("MINIMAP_HIDE_CONFIRM"),
-        button1 = YES or "Yes",
-        button2 = NO or "No",
-        OnAccept = function() HideMinimapButton() end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true,
-        preferredIndex = 3,
-    }
-    StaticPopup_Show("SENTINELMENTORJOURNAL_HIDE_MINIMAP")
-end
-
-function SMJ.ShowMinimapButton()
-    SentinelMentorJournalDB.minimapHidden = false
-    SentinelMentorJournalDB.minimap = SentinelMentorJournalDB.minimap or {}
-    SentinelMentorJournalDB.minimap.hide = false
-
-    if SMJ._minimapUsingLibDBIcon and SMJ._minimapIconLib then
-        SMJ._minimapIconLib:Show("SentinelMentor")
-        minimapButton = _G["LibDBIcon10_SentinelMentorJournal"] or minimapButton
-    elseif minimapButton then
-        minimapButton:Show()
-        PositionMinimap()
-    end
-end
-
-function SMJ.SetupLibDBIconMinimap()
-    if not _G.LibStub then return false end
-
-    local ldb = _G.LibStub("LibDataBroker-1.1", true)
-    local iconLib = _G.LibStub("LibDBIcon-1.0", true)
-    if not ldb or not iconLib then return false end
-
-    SentinelMentorJournalDB.minimap = SentinelMentorJournalDB.minimap or {}
-    local db = SentinelMentorJournalDB.minimap
-
-    -- Migrate the old position once. LibDBIcon stores the same angular value in
-    -- minimapPos, while the previous SMJ button used minimapAngle.
-    if db.minimapPos == nil then
-        db.minimapPos = SentinelMentorJournalDB.minimapAngle or 225
-    end
-    db.hide = SentinelMentorJournalDB.minimapHidden and true or false
-
-    local object = ldb:GetDataObjectByName("SentinelMentor")
-    if not object then
-        object = ldb:NewDataObject("SentinelMentor", {
-            type = "launcher",
-            text = "DungeonJournal",
-            icon = "Interface\\Icons\\INV_Misc_Book_09",
-            OnClick = function(_, button)
-                if button == "LeftButton" then
-                    ToggleJournal()
-                elseif button == "RightButton" then
-                    if SMJ.ToggleSettingsPanel then SMJ.ToggleSettingsPanel() else SMJ.ConfirmHideMinimapButton() end
-                end
-            end,
-            OnTooltipShow = function(tooltip)
-                tooltip:AddLine("DungeonJournal", 1, 0.82, 0.25)
-                tooltip:AddLine(L("MINIMAP_LEFT"), 1, 1, 1)
-                tooltip:AddLine(L("MINIMAP_DRAG"), 0.8, 0.8, 0.8)
-                tooltip:AddLine(L("MINIMAP_OPTIONS"), 0.8, 0.8, 0.8)
-            end,
-        })
-    end
-
-    SMJ._minimapDataObject = object
-    SMJ._minimapIconLib = iconLib
-
-    if not iconLib:IsRegistered("SentinelMentor") then
-        iconLib:Register("SentinelMentor", object, db)
-    end
-
-    minimapButton = _G["LibDBIcon10_SentinelMentorJournal"]
-    if minimapButton then
-        -- These fields are present on a normal LibDBIcon button and are also
-        -- useful to minimap-button collectors that inspect the frame directly.
-        minimapButton.dataObject = object
-        minimapButton.db = db
-    end
-
-    SMJ._minimapUsingLibDBIcon = true
-
-    if db.hide then
-        iconLib:Hide("SentinelMentor")
-    else
-        iconLib:Show("SentinelMentor")
-    end
-
-    return true
-end
-
--- While RPG Mode is on the minimap book turns white: the same book icon,
--- desaturated, with a brightening copy added on top (no extra image needed,
--- so it stays a crisp book at minimap size).
-SMJ.UpdateMinimapIcon = function()
-    local rpg = SMJ.IsRPGMode and SMJ.IsRPGMode() or false
-    local book = "Interface\\Icons\\INV_Misc_Book_09"
-    if SMJ._minimapDataObject and SMJ._minimapDataObject.icon ~= book then SMJ._minimapDataObject.icon = book end
-    local button = _G["LibDBIcon10_SentinelMentorJournal"]
-    local icon = button and button.icon
-    if not icon or not icon.SetDesaturated then return end
-    icon:SetDesaturated(rpg)
-    if not button.fdjWhite then
-        local w = button:CreateTexture(nil, "ARTWORK", nil, 7)
-        w:SetTexture(book)
-        w:SetDesaturated(true)
-        w:SetBlendMode("ADD")
-        w:SetAlpha(0.6)
-        button.fdjWhite = w
-    end
-    local w = button.fdjWhite
-    w:ClearAllPoints()
-    w:SetAllPoints(icon)
-    if icon.GetTexCoord then w:SetTexCoord(icon:GetTexCoord()) end
-    w:SetShown(rpg)
-end
-
-function SMJ.CreateFallbackMinimap()
-    SMJ._minimapUsingLibDBIcon = false
-
-    minimapButton = _G["LibDBIcon10_SentinelMentorJournal"]
-        or CreateFrame("Button", "LibDBIcon10_SentinelMentorJournal", Minimap)
-
-    minimapButton:SetParent(Minimap)
-    minimapButton:SetSize(31, 31)
-    minimapButton:SetFrameStrata("MEDIUM")
-    minimapButton:SetFrameLevel((Minimap:GetFrameLevel() or 0) + 8)
-    minimapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    minimapButton:RegisterForDrag("LeftButton")
-
-    -- Match the public shape of a normal LibDBIcon button as closely as possible
-    -- for collectors even when no shared LibDBIcon library is available.
-    SentinelMentorJournalDB.minimap = SentinelMentorJournalDB.minimap or {}
-    minimapButton.db = SentinelMentorJournalDB.minimap
-    minimapButton.dataObject = minimapButton.dataObject or {
-        type = "launcher",
-        text = "DungeonJournal",
-        icon = "Interface\\Icons\\INV_Misc_Book_09",
-    }
-
-    if not minimapButton.fdjInitialized then
-        local bg = minimapButton:CreateTexture(nil, "BACKGROUND")
-        bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
-        bg:SetSize(20, 20)
-        bg:SetPoint("CENTER")
-
-        local icon = minimapButton:CreateTexture(nil, "ARTWORK")
-        icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
-        icon:SetSize(20, 20)
-        icon:SetPoint("CENTER")
-        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        minimapButton.icon = icon
-
-        local border = minimapButton:CreateTexture(nil, "OVERLAY")
-        border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-        border:SetSize(54, 54)
-        border:SetPoint("TOPLEFT", -1, 1)
-        minimapButton.border = border
-
-        minimapButton:SetScript("OnClick", function(_, button)
-            if button == "LeftButton" then
-                ToggleJournal()
-            elseif button == "RightButton" then
-                if SMJ.ToggleSettingsPanel then SMJ.ToggleSettingsPanel() else SMJ.ConfirmHideMinimapButton() end
-            end
-        end)
-
-        minimapButton:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-            GameTooltip:AddLine("DungeonJournal", 1, 0.82, 0.25)
-            GameTooltip:AddLine(L("MINIMAP_LEFT"), 1, 1, 1)
-            GameTooltip:AddLine(L("MINIMAP_DRAG"), 0.8, 0.8, 0.8)
-            GameTooltip:AddLine(L("MINIMAP_OPTIONS"), 0.8, 0.8, 0.8)
-            GameTooltip:Show()
-        end)
-
-        minimapButton:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-
-        minimapButton:SetScript("OnDragStart", function(self)
-            self:SetScript("OnUpdate", function()
-                local mx, my = Minimap:GetCenter()
-                if not mx or not my then return end
-
-                local x, y = GetCursorPosition()
-                local scale = UIParent:GetEffectiveScale()
-                x, y = x / scale, y / scale
-
-                SentinelMentorJournalDB.minimapAngle =
-                    math.deg(math.atan2(y - my, x - mx))
-
-                PositionMinimap()
-            end)
-        end)
-
-        minimapButton:SetScript("OnDragStop", function(self)
-            self:SetScript("OnUpdate", nil)
-        end)
-
-        minimapButton.fdjInitialized = true
-    end
-
-    PositionMinimap()
-
-    if SentinelMentorJournalDB.minimapHidden then
-        minimapButton:Hide()
-    else
-        minimapButton:Show()
-    end
-end
-
-function SMJ.CreateMinimap()
-    -- Prefer the real shared LibDataBroker/LibDBIcon libraries when another
-    -- enabled addon (including Leatrix Plus) provides them. This makes SMJ a
-    -- genuinely registered LibDBIcon launcher instead of only imitating the
-    -- frame name, which is required by collectors that use the library registry.
-    if SMJ.SetupLibDBIconMinimap() then
-        return
-    end
-
-    -- Keep a standalone fallback so SMJ still has a minimap button when no
-    -- broker/icon library exists in the user's addon set.
-    SMJ.CreateFallbackMinimap()
-end
-
--- ============================================================
--- COMMANDS / EVENTS
--- ============================================================
-
-SLASH_SENTINELMENTORJOURNAL1 = "/smj"
-SLASH_SENTINELMENTORJOURNAL2 = nil
-
-SlashCmdList.SENTINELMENTORJOURNAL = function(msg)
-    msg = strtrim(msg or ""):lower()
-
-    if msg == "lang" or msg == "language" then
-        local active = SMJ.GetLanguage and SMJ.GetLanguage() or "enUS"
-        local saved = SentinelMentorJournalDB.language or "auto"
-        local display = saved == "auto" and L("LANGUAGE_AUTO", active) or active
-        print("|cffd8a83cDungeonJournal|r " .. L("LANGUAGE_CURRENT", display))
-        print("|cffd8a83cDungeonJournal|r " .. L("LANGUAGE_HELP"))
-        return
-    end
-
-    local langArg = msg:match("^lang%s+(%S+)$") or msg:match("^language%s+(%S+)$")
-    if langArg then
-        ApplySelectedLanguage(langArg)
-        local active, saved = SMJ.SetLanguage(langArg)
-        local display = saved == "auto" and L("LANGUAGE_AUTO", active) or active
-        print("|cffd8a83cDungeonJournal|r " .. L("LANGUAGE_SET", display))
-        return
-    end
-
-    if msg:match("^wing") then
-        local wing = SMJ.ScarletWingFromWord and SMJ.ScarletWingFromWord(msg:match("^wing%s+(%S+)") or "")
-        if wing and SMJ.SetScarletWing and SMJ.SetScarletWing(wing) then
-            print("|cffffd100Dungeon Journal|r " .. wing)
-        else
-            print("|cffffd100Dungeon Journal|r /smj wing graveyard  |  /smj wing library")
-        end
-        return
-    end
-    if msg == "options" or msg == "settings" or msg == "config" then
-        if SMJ.ToggleSettingsPanel then SMJ.ToggleSettingsPanel() end
-        return
-    end
-    if msg == "newids" then
-        if SMJ.PrintLearnedItemIDs then SMJ.PrintLearnedItemIDs() end
-        return
-    end
-    if msg == "itemtip" then
-        local on = SMJ.ToggleItemSourceStrip and SMJ.ToggleItemSourceStrip()
-        print("|cffffd100Dungeon Journal|r item source on tooltips: " .. (on and "ON" or "OFF"))
-        return
-    end
-    if msg == "worldmap" then
-        local on = SMJ.ToggleWorldMapOverlay and SMJ.ToggleWorldMapOverlay()
-        print("|cffd8a83cDungeonJournal|r " .. L("WM_DUNGEON_MAP") .. " (M): " .. (on and "ON" or "OFF"))
-        return
-    end
-
-    if msg:match("^scale") then
-        local value = tonumber(msg:match("^scale%s+([%d%.]+)"))
-        local scale = SMJ.SetJournalScale and SMJ.SetJournalScale(value or 1)
-        print("|cffd8a83cDungeonJournal|r scale: " .. tostring(scale))
-        return
-    end
-
-    if msg == "minimap" then
-        SMJ.ShowMinimapButton()
-        return
-    end
-
-    if msg == "rfc" or msg == "ragefire" or msg == "ragefirechasm" then
-        frame:Show()
-        SelectDungeon("Ragefire Chasm")
-        return
-    end
-
-    if msg == "hall" or msg == "hot" then
-        frame:Show()
-        SelectDungeon("Hall of Thanes")
-        return
-    end
-
-    if msg == "dm" or msg == "vc" or msg == "deadmines" then
-        frame:Show()
-        SelectDungeon("The Deadmines")
-        return
-    end
-
-    if msg == "ruins" or msg == "rol" or msg == "lordaeron" then
-        frame:Show()
-        SelectDungeon("Ruins of Lordaeron")
-        return
-    end
-
-    if msg == "wc" or msg == "wailing" or msg == "wailingcaverns" then
-        frame:Show()
-        SelectDungeon("Wailing Caverns")
-        return
-    end
-
-    if msg == "sfk" or msg == "shadowfang" or msg == "shadowfangkeep" then
-        frame:Show()
-        SelectDungeon("Shadowfang Keep")
-        return
-    end
-
-    if msg == "bfd" or msg == "blackfathom" or msg == "blackfathomdeeps" or msg == "blackfathomdepths" then
-        frame:Show()
-        SelectDungeon("Blackfathom Deeps")
-        return
-    end
-
-    -- Shortcuts for the dungeons added later (/smj smlib, /smj gnomer, ...).
-    do
-        local shortcuts = {
-            stocks = "The Stockade", stockade = "The Stockade", stockades = "The Stockade",
-            gnomer = "Gnomeregan", gnomeregan = "Gnomeregan",
-            rfk = "Razorfen Kraul", kraul = "Razorfen Kraul", razorfenkraul = "Razorfen Kraul",
-            dala = "City of Dalaran", dal = "City of Dalaran", dalaran = "City of Dalaran", cityofdalaran = "City of Dalaran",
-            exca = "Excavation Site: Wetlands", excavation = "Excavation Site: Wetlands", wetlands = "Excavation Site: Wetlands",
-            smgy = "Scarlet Monastery: Graveyard", gy = "Scarlet Monastery: Graveyard", graveyard = "Scarlet Monastery: Graveyard",
-            smlib = "Scarlet Monastery: Library", lib = "Scarlet Monastery: Library", library = "Scarlet Monastery: Library",
-            smarm = "Scarlet Monastery: Armory", arm = "Scarlet Monastery: Armory", armory = "Scarlet Monastery: Armory",
-            smcath = "Scarlet Monastery: Cathedral", cath = "Scarlet Monastery: Cathedral", cathedral = "Scarlet Monastery: Cathedral",
-            rfd = "Razorfen Downs", downs = "Razorfen Downs", razorfendowns = "Razorfen Downs",
-            ulda = "Uldaman", uld = "Uldaman", uldaman = "Uldaman",
-            zf = "Zul'Farrak", zulfarrak = "Zul'Farrak",
-            st = "Sunken Temple", sunken = "Sunken Temple", sunkentemple = "Sunken Temple",
-            scholo = "Scholomance", scholomance = "Scholomance", mara = "Maraudon", maraudon = "Maraudon",
-            brd = "Blackrock Depths", depths = "Blackrock Depths", blackrockdepths = "Blackrock Depths",
-            ubrs = "Upper Blackrock Spire", upperspire = "Upper Blackrock Spire",
-            lbrs = "Lower Blackrock Spire", lowerspire = "Lower Blackrock Spire",
-            dme = "Dire Maul: East", dmeast = "Dire Maul: East", dmw = "Dire Maul: West", dmwest = "Dire Maul: West",
-            dmn = "Dire Maul: North", dmnorth = "Dire Maul: North", tribute = "Dire Maul: North",
-            strat = "Stratholme: Living", stratlive = "Stratholme: Living", stratliving = "Stratholme: Living",
-            stratud = "Stratholme: Undead", stratundead = "Stratholme: Undead", baron = "Stratholme: Undead",
-        }
-        local key = msg:gsub("[%s:%-']", "")
-        local target = shortcuts[key]
-        if target and DB[target] then
-            frame:Show()
-            SelectDungeon(target)
-            return
-        end
-    end
-
-    ToggleJournal()
-end
-
-SMJ.events = SMJ.events or CreateFrame("Frame")
-SMJ.events:RegisterEvent("PLAYER_LOGIN")
-SMJ.events:RegisterEvent("PLAYER_LEAVING_WORLD")
-SMJ.events:RegisterEvent("PLAYER_ENTERING_WORLD")
-SMJ.events:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-SMJ.events:RegisterEvent("QUEST_LOG_UPDATE")
-SMJ.events:RegisterEvent("QUEST_TURNED_IN")
-SMJ.events:RegisterEvent("QUEST_ACCEPTED")
-SMJ.events:RegisterEvent("QUEST_REMOVED")
-SMJ.events:RegisterEvent("QUEST_DATA_LOAD_RESULT")
-SMJ.events:RegisterEvent("PLAYER_LEVEL_UP")
-SMJ.events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
-
--- Coalesce event bursts and refresh on the next frame, outside API callbacks.
-SMJ.questRefreshPending = false
-SMJ.questRefreshWorker = SMJ.questRefreshWorker or CreateFrame("Frame")
-SMJ.questRefreshWorker:Hide()
-function SMJ.ScheduleQuestRefresh()
-    if SMJ.questRefreshPending then return end
-    SMJ.questRefreshPending = true
-    SMJ.questRefreshWorker:SetScript("OnUpdate", function(self)
-        self:SetScript("OnUpdate", nil)
-        self:Hide()
-        SMJ.questRefreshPending = false
-        if frame and frame:IsShown() then
-            if frame.currentView == "home" then
-                RefreshHomeDungeonCards()
-            elseif selectedMode == "quests" then
-                RefreshQuestList()
-                RefreshQuestDetail()
-            end
-        end
-    end)
-    SMJ.questRefreshWorker:Show()
-end
-
-SMJ.events:SetScript("OnEvent", function(_, event, arg1, arg2)
-    local questID, success = arg1, arg2
-    if event == "PLAYER_LOGIN" then
-        -- SavedVariables load after this file runs, so the display-ID cache
-        -- captured at load time was a throwaway table. Rebind it to the real
-        -- saved table so resolved portraits persist between sessions.
-        SentinelMentorJournalDB.displayIDs = SentinelMentorJournalDB.displayIDs or {}
-        if displayIDCache ~= SentinelMentorJournalDB.displayIDs then
-            for k, v in pairs(displayIDCache) do
-                if SentinelMentorJournalDB.displayIDs[k] == nil then SentinelMentorJournalDB.displayIDs[k] = v end
-            end
-            displayIDCache = SentinelMentorJournalDB.displayIDs
-        end
-        if UnitFactionGroup then
-            local playerFaction = UnitFactionGroup("player")
-            if playerFaction == "Horde" then
-                selectedQuestFaction = "Horde"
-            elseif playerFaction == "Alliance" then
-                selectedQuestFaction = "Alliance"
-            end
-            SentinelMentorJournalDB.questFaction = selectedQuestFaction
-        end
-
-        ScanEncounterJournal()
-        CreateItemTooltip()
-        CreateMainFrame()
-        SMJ.CreateMinimap()
-
-        -- Boss portraits use journal data or numeric NPC-ID display resolution; no live unit-string parsing.
-
-        RefreshAll()
-
-        local addonVersion
-        if C_AddOns and C_AddOns.GetAddOnMetadata then
-            addonVersion = C_AddOns.GetAddOnMetadata("SentinelMentor", "Version")
-        elseif GetAddOnMetadata then
-            addonVersion = GetAddOnMetadata("SentinelMentor", "Version")
-        end
-        addonVersion = (addonVersion and tostring(addonVersion)) or "1.7.0"
-        print("|cffd8a83cDungeon Journal by Exehn|r |cffffffffv" .. addonVersion .. "|r")
-        return
-    end
-
-    if event == "PLAYER_LEAVING_WORLD" then
-        -- No portrait work during zoning: the warm-up and the lookups wait.
-        SMJ.portraitZoning = true
-        SMJ.portraitZoneSerial = (SMJ.portraitZoneSerial or 0) + 1
-        return
-    end
-
-    if event == "QUEST_DATA_LOAD_RESULT" then
-        if not questDataRequests[questID] then return end
-        questDataRequests[questID] = success == false
-            and {state = "failed", retryAt = (GetTime and GetTime() or 0) + 30}
-            or {state = "loaded"}
-        SMJ.ScheduleQuestRefresh()
-        return
-    end
-
-    if event == "GET_ITEM_INFO_RECEIVED" then
-        if itemTooltipQualityCache and questID then
-            itemTooltipQualityCache[questID] = nil
-        end
-        if frame and frame:IsShown() then
-            if selectedMode == "bosses" then
-                RefreshLoot()
-            elseif selectedMode == "quests" then
-                RefreshQuestDetail()
-                ApplyLocaleFontTree(frame)
-            end
-            -- Forever custom-item metadata may become available after the
-            -- search dropdown was already built. Refresh it in-place so names
-            -- and icons update without making the player retype the query.
-            if frame.RefreshSearchResults and frame.searchEditBox
-                and frame.searchResultsFrame and frame.searchResultsFrame:IsShown() then
-                frame.RefreshSearchResults(frame.searchEditBox:GetText() or "", true)
-            end
-        end
-        return
-    end
-
-    if event == "QUEST_LOG_UPDATE"
-        or event == "QUEST_TURNED_IN"
-        or event == "QUEST_ACCEPTED"
-        or event == "QUEST_REMOVED"
-        or event == "PLAYER_LEVEL_UP"
-    then
-        SMJ.ScheduleQuestRefresh()
-        return
-    end
-
-    if event == "PLAYER_ENTERING_WORLD" then
-        -- Keep the loading transition clean: no hidden tooltip scans and no
-        -- model work synchronously on PLAYER_ENTERING_WORLD. Select the
-        -- current dungeon immediately, but refresh visible UI only after the
-        -- world has settled.
-        local current = CurrentDungeon()
-        if current and DB[current] then
-            selectedDungeon = current
-            SentinelMentorJournalDB.lastDungeon = current
-            if selectedBoss > #DB[current].bosses then
-                selectedBoss = 1
-                SentinelMentorJournalDB.lastBoss = 1
-            end
-        end
-
-        if C_Timer and type(C_Timer.After) == "function" then
-            C_Timer.After(2.25, function()
-                if frame and frame:IsShown() then
-                    RefreshAll()
-                end
-            end)
-            -- Portrait work resumes once the world has settled; the first
-            -- time, the warm-up starts a few seconds later.
-            local serial = SMJ.portraitZoneSerial
-            C_Timer.After(2, function()
-                if SMJ.portraitZoneSerial ~= serial then return end
-                SMJ.portraitZoning = false
-                if portraitResolver and #portraitResolveQueue > 0 then portraitResolver:Show() end
-            end)
-            if not SMJ.portraitsPrewarmed then
-                C_Timer.After(6, function()
-                    if SMJ.PrewarmBossPortraits then pcall(SMJ.PrewarmBossPortraits) end
-                end)
-            end
-        end
-        return
-    end
-
-    local current = CurrentDungeon()
-
-    if current and DB[current] then
-        selectedDungeon = current
-        SentinelMentorJournalDB.lastDungeon = current
-
-        if selectedBoss > #DB[current].bosses then
-            selectedBoss = 1
-            SentinelMentorJournalDB.lastBoss = 1
-        end
-
-        if frame and frame:IsShown() then
-            RefreshAll()
-        end
-    end
-end)
+SMJ._J.L = L
+SMJ._J.DB = DB
+SMJ._J.ApplyLocaleFontTree = ApplyLocaleFontTree
+SMJ._J.portraitResolver = portraitResolver
+SMJ._J.portraitResolveQueue = portraitResolveQueue
+SMJ._J.itemTooltipQualityCache = itemTooltipQualityCache
+SMJ._J.CurrentDungeon = CurrentDungeon
+SMJ._J.questDataRequests = questDataRequests
+SMJ._J.RefreshAll = RefreshAll
+SMJ._J.RefreshHomeDungeonCards = RefreshHomeDungeonCards
+SMJ._J.RefreshLoot = RefreshLoot
+SMJ._J.RefreshQuestList = RefreshQuestList
+SMJ._J.RefreshQuestDetail = RefreshQuestDetail
+SMJ._J.SelectDungeon = SelectDungeon
+SMJ._J.ApplySelectedLanguage = ApplySelectedLanguage
+SMJ._J.ScanEncounterJournal = ScanEncounterJournal
+SMJ._J.CreateItemTooltip = CreateItemTooltip
+SMJ._J.CreateMainFrame = CreateMainFrame

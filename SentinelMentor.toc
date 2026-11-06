@@ -137,6 +137,7 @@ Systems\BugReport.lua
 Systems\PortraitPool.lua
 Systems\BakedPortraits.lua
 Core\Journal.lua
+Core\Journal2.lua
 Systems\ScarletWing.lua
 Systems\ItemSource.lua
 Systems\SettingsPanel.lua
