@@ -186,6 +186,11 @@ SMJ.DUNGEON_MAPS = {
     ["Ruins of Lordaeron"] = {
         floors = { { texture = "Interface\\AddOns\\SentinelMentor\\Media\\RuinsOfLordaeronMap", texBottom = 683 / 1024 } },
         entrance = { floor = 1, x = 0.612, y = 0.214, angle = 180 },
+        -- NPCs who take quests inside the dungeon (quest tracker's ? button):
+        -- Captain Truman stands just inside, by the entrance.
+        turnins = {
+            { npc = "Captain Truman", x = 0.612, y = 0.272 },
+        },
         -- Positions follow the published run order: Witherfang in the long
         -- hallway east of the entrance (King's Alley), The Baron in the
         -- indoor courtyard after it, then the U-shaped path, The Abandoned's
@@ -194,7 +199,7 @@ SMJ.DUNGEON_MAPS = {
         bosses = {
             { name = "Witherfang",        x = 0.668, y = 0.360 },
             { name = "The Baron",         x = 0.615, y = 0.650 }, -- from the author's minimap screenshot (King's Alley, curved road)
-            { name = "Viktor the Vile",   x = 0.530, y = 0.825 }, -- south, below the curved road (author's marked screenshot)
+            { name = "Viktor the Vile",   x = 0.437, y = 0.788 }, -- beside Lordaeron Graveyard (author's black dot, 6 Nov 2026)
             { name = "The Abandoned",     x = 0.395, y = 0.665 },
             { name = "Bjork",             x = 0.345, y = 0.220 },
             { name = "Rath'mael",         x = 0.520, y = 0.600 },
@@ -226,12 +231,13 @@ SMJ.DUNGEON_MAPS = {
         },
     },
 
-    -- Announced dungeons (no boss data yet): the map is their only page.
+    -- No boss positions known yet.
     ["The Drowned City"] = {
         floors = { { texture = "Interface\\AddOns\\SentinelMentor\\Media\\DrownedCityMap", texBottom = 683 / 1024 } },
         entrance = { floor = 1, x = 0.846, y = 0.521, angle = 0 }, -- the swirl in Sunken Hollow
         bosses = {},
     },
+    -- Announced dungeons (no boss data yet): the map is their only page.
     ["Krol'dok Stronghold"] = {
         floors = { { texture = "Interface\\AddOns\\SentinelMentor\\Media\\KroldokMap", texBottom = 683 / 1024 } },
         entrance = { floor = 1, x = 0.205, y = 0.807, angle = 180 }, -- the swirl where the trail comes in (south-west)
@@ -829,6 +835,21 @@ SMJ.StartsInsideDungeon = function(pickupText)
     if type(pickupText) ~= "string" then return false end
     local text = string.lower(pickupText)
     return text:find("inside ", 1, true) ~= nil
+end
+
+-- A quest started by an item that drops in the dungeon (from one of its
+-- bosses or its trash) starts inside too, whatever its text says.
+SMJ.StartItemDropsIn = function(quest, dungeonName)
+    local item = type(quest) == "table" and quest.startItem
+    local id = type(item) == "table" and item[1]
+    local dungeon = id and dungeonName and DB[dungeonName]
+    if type(dungeon) ~= "table" then return false end
+    for _, boss in ipairs(dungeon.bosses or {}) do
+        for _, loot in ipairs(type(boss) == "table" and boss.loot or {}) do
+            if type(loot) == "table" and loot[1] == id then return true end
+        end
+    end
+    return false
 end
 
 -- Quest list rows: a small dungeon icon after "Available from Level X" for
@@ -1520,9 +1541,10 @@ local function IsQuestFinished(questID)
         return false
     end
 
-    -- A quest with no objectives (go there / deliver this) is reported complete
-    -- by the quest log the moment it is accepted. Treat it as still in
-    -- progress until it is actually turned in.
+    -- A quest with no objectives (talk to someone / deliver this) is reported
+    -- complete by the quest log the moment it is accepted: it is ready to hand
+    -- in, as the game itself shows it (the journal draws its ? until it is
+    -- handed in, not the green tick).
     local objectiveCount
     if C_QuestLog and type(C_QuestLog.GetQuestObjectives) == "function" then
         local ok, objectives = pcall(C_QuestLog.GetQuestObjectives, questID)
@@ -1535,10 +1557,6 @@ local function IsQuestFinished(questID)
             if okCount and type(count) == "number" then objectiveCount = count end
         end
     end
-    if objectiveCount == 0 then
-        return false
-    end
-
     if C_QuestLog and type(C_QuestLog.IsComplete) == "function" then
         local ok, value = pcall(C_QuestLog.IsComplete, questID)
         if ok then
@@ -2068,9 +2086,20 @@ local function FinishPortraitResolve(request, displayID)
     if type(displayID) == "number" and displayID > 0 then
         displayIDCache[request.npcID] = displayID
         portraitRetryAt[request.npcID] = nil
+        if SMJ.WarmPortraitDisplay then pcall(SMJ.WarmPortraitDisplay, displayID) end
     else
-        -- Uncached creatures often need a second request: retry soon.
+        -- Uncached creatures often need a second request: try again in two
+        -- seconds by itself (up to five times), not only on the next click.
         portraitRetryAt[request.npcID] = (GetTime and GetTime() or 0) + 2
+        SMJ.portraitResolveTries = SMJ.portraitResolveTries or {}
+        local npcID = request.npcID
+        local tries = (SMJ.portraitResolveTries[npcID] or 0) + 1
+        SMJ.portraitResolveTries[npcID] = tries
+        if tries < 5 and C_Timer and C_Timer.After then
+            C_Timer.After(2.05, function()
+                if SMJ.QueuePortraitResolve then SMJ.QueuePortraitResolve(npcID) end
+            end)
+        end
     end
 
     request.model:SetScript("OnModelLoaded", nil)
@@ -2086,7 +2115,9 @@ end
 
 local function StartNextPortraitResolve()
     if portraitResolveCurrent or not portraitResolver then return end
-    if not frame or not frame:IsShown() then return end
+    -- While the journal is open, or in the background once the portrait
+    -- warm-up has started; never during a loading screen.
+    if not frame or not (frame:IsShown() or SMJ.portraitWarmup) or SMJ.portraitZoning then return end
 
     local now = GetTime and GetTime() or 0
     if now < (portraitResolveBlockedUntil or 0) then return end
@@ -2131,7 +2162,7 @@ end
 
 local function QueuePortraitResolve(npcID)
     if not npcID or displayIDCache[npcID] or portraitResolveQueued[npcID] then return end
-    if not frame or not frame:IsShown() then return end
+    if not frame or not (frame:IsShown() or SMJ.portraitWarmup) then return end
 
     local now = GetTime and GetTime() or 0
     if now < (portraitResolveBlockedUntil or 0) then return end
@@ -2141,6 +2172,7 @@ local function QueuePortraitResolve(npcID)
     table.insert(portraitResolveQueue, npcID)
     if portraitResolver then portraitResolver:Show() end
 end
+SMJ.QueuePortraitResolve = QueuePortraitResolve
 
 local function CreatePortraitResolver()
     portraitResolver = CreateFrame("Frame")
@@ -2239,6 +2271,11 @@ local function SetBossPortrait(texture, dungeonName, boss)
     -- Encounter Journal creature ID is numeric and safe to use as identity.
     if (not npcID) and data and type(data.creatureID) == "number" and data.creatureID > 0 then
         npcID = data.creatureID
+    end
+    -- A creature with the boss's look, used for the picture only (The
+    -- Drowned City's bosses are known by their test copies so far).
+    if (not npcID) and boss and type(boss.portraitNpcID) == "number" then
+        npcID = boss.portraitNpcID
     end
 
     -- 1) Explicit bundled portrait art. Used only when we have a verified clean
@@ -2344,26 +2381,58 @@ SMJ.InstallRightClickBack = function()
     walk(frame)
 end
 
--- Resolve every boss portrait in the background while the journal is open.
--- Bosses that already have a 2D source return immediately; the rest are
--- queued once, resolved one by one and saved, then visible panels refresh.
+-- Every boss portrait, prepared in the background once per session: it
+-- starts 6 s after logging in (or when the journal first opens, if that is
+-- sooner), a few bosses per frame, and waits out combat and loading screens.
+-- Bundled pictures cost nothing; portraits the game has to draw are rendered
+-- off-screen and kept (Systems/PortraitPool.lua), and Forever bosses whose
+-- display is not known yet are looked up and saved, so the journal shows
+-- them at once.
 local prewarmTexture
 SMJ.PrewarmBossPortraits = function()
-    if not frame then return end
+    if not frame or SMJ.portraitsPrewarmed then return end
+    SMJ.portraitsPrewarmed = true
+    SMJ.portraitWarmup = true
     if not prewarmTexture then
         prewarmTexture = frame:CreateTexture(nil, "BACKGROUND")
         prewarmTexture:SetSize(1, 1)
         prewarmTexture:Hide()
     end
+    local work = {}
     for _, dungeonName in ipairs(SMJ.ORDER or {}) do
         local dungeon = DB[dungeonName]
         for _, boss in ipairs((dungeon and dungeon.bosses) or {}) do
-            if not boss.trash then
-                pcall(SetBossPortrait, prewarmTexture, dungeonName, boss)
-            end
+            if not boss.trash then work[#work + 1] = { dungeonName, boss } end
         end
     end
-    if portraitResolver and #portraitResolveQueue > 0 then portraitResolver:Show() end
+    -- The mobs drawn on Trash Drops rows.
+    for _, displayID in pairs(SMJ.TRASH_MOB_DISPLAY_IDS or {}) do
+        work[#work + 1] = { nil, nil, displayID }
+    end
+    local index = 0
+    local function Step()
+        if SMJ.portraitZoning or (type(InCombatLockdown) == "function" and InCombatLockdown()) then
+            if C_Timer and C_Timer.After then C_Timer.After(1, Step) end
+            return
+        end
+        for _ = 1, 6 do
+            index = index + 1
+            local job = work[index]
+            if not job then break end
+            if job[3] then
+                TrySetDisplayPortrait(prewarmTexture, job[3])
+            else
+                pcall(SetBossPortrait, prewarmTexture, job[1], job[2])
+            end
+        end
+        if portraitResolver and #portraitResolveQueue > 0 then portraitResolver:Show() end
+        if work[index + 1] and C_Timer and C_Timer.After then C_Timer.After(0.05, Step) end
+    end
+    Step()
+end
+-- A display found by the background lookup: render it now.
+SMJ.WarmPortraitDisplay = function(displayID)
+    if prewarmTexture then TrySetDisplayPortrait(prewarmTexture, displayID) end
 end
 
 -- v1.0.23: live unit portrait capture intentionally removed.
@@ -2935,7 +3004,7 @@ local function MakeLootRow(parent)
 
     row:SetScript("OnEnter", function(self)
         HideSearchItemHighlight(self)
-        local theme = THEMES[selectedDungeon] or THEMES["Hall of Thanes"]
+        local theme = THEMES[selectedDungeon] or THEMES.default
         local c = theme.rowSelected
         self.fdjHoverColor = { c[1], c[2], c[3] }
         self:SetBackdropColor(c[1], c[2], c[3], 1)
@@ -2943,7 +3012,7 @@ local function MakeLootRow(parent)
     end)
 
     row:SetScript("OnLeave", function(self)
-        local theme = THEMES[selectedDungeon] or THEMES["Hall of Thanes"]
+        local theme = THEMES[selectedDungeon] or THEMES.default
         self.fdjHoverColor = nil
         self:SetBackdropColor(unpack(theme.lootRow))
         self.fdjComparing = nil
@@ -3148,6 +3217,14 @@ local function MakeQuestButton(parent)
     button.check:SetPoint("TOPRIGHT", button, "TOPRIGHT", -8, -8)
     button.check:Hide()
 
+    -- Ready to hand in: the quest tracker's round ? in place of the tick (a
+    -- click shows where to hand the quest in).
+    if SMJ.CreateTurnInButton then
+        button.turnIn = SMJ.CreateTurnInButton(button, 32)
+        button.turnIn:SetPoint("CENTER", button, "TOPRIGHT", -18, -18)
+        button.turnIn:SetFrameLevel(button:GetFrameLevel() + 6)
+    end
+
     button.allianceIcon = button:CreateTexture(nil, "OVERLAY")
     button.allianceIcon:SetSize(20, 20)
     button.allianceIcon:SetPoint("TOPRIGHT", button, "TOPRIGHT", -50, -8)
@@ -3302,7 +3379,7 @@ local function MakeQuestRewardButton(parent)
     end)
 
     button:SetScript("OnLeave", function(self)
-        local theme = THEMES[selectedDungeon] or THEMES["Hall of Thanes"]
+        local theme = THEMES[selectedDungeon] or THEMES.default
         self.fdjHoverColor = nil
         self:SetBackdropColor(unpack(theme.lootRow))
         self.fdjComparing = nil
@@ -3383,7 +3460,7 @@ end
 
 local function UpdateModeTabs()
     if not frame or not frame.bossesTab or not frame.questsTab then return end
-    local theme = THEMES[selectedDungeon] or THEMES["Hall of Thanes"]
+    local theme = THEMES[selectedDungeon] or THEMES.default
     local mapActive = frame.dungeonMapPanel and frame.dungeonMapPanel:IsShown() or false
     local routeActive = frame.routePanel and frame.routePanel:IsShown() or false
     local function style(tab, active)
@@ -3553,7 +3630,7 @@ local function UpdateFactionButtons()
         return
     end
 
-    local theme = THEMES[selectedDungeon] or THEMES["Hall of Thanes"]
+    local theme = THEMES[selectedDungeon] or THEMES.default
 
     local function Style(button, active, faction)
         if active then
@@ -3625,7 +3702,7 @@ RefreshQuestList = function()
 
     local dungeon = DB[selectedDungeon]
     local quests = dungeon.quests or {}
-    local theme = THEMES[selectedDungeon] or THEMES["Hall of Thanes"]
+    local theme = THEMES[selectedDungeon] or THEMES.default
 
     BuildVisibleQuestIndexes()
     UpdateFactionButtons()
@@ -3680,6 +3757,7 @@ RefreshQuestList = function()
             local quest = quests[questIndex]
             local complete = IsQuestFinished(quest.id)
             local inLog = IsQuestInLog(quest.id)
+            local ready = complete and inLog and not SMJ.QuestTurnedIn(quest.id)
 
             button.questIndex = questIndex
             button.name:SetText(QuestField(quest.id, "name", quest.name))
@@ -3711,7 +3789,8 @@ RefreshQuestList = function()
             -- then sits to the right of the chain control.
             local rowIconOffset = (button.meta:GetStringWidth() or 0) + 6
             if chain and button.chainToggle then rowIconOffset = rowIconOffset + (button.chainToggle:GetWidth() or 20) + 4 end
-            SMJ.SetRowDungeonIcon(button, quest.startsInDungeon or ((not chain) and SMJ.StartsInsideDungeon(quest.pickup)), rowIconOffset)
+            SMJ.SetRowDungeonIcon(button, quest.startsInDungeon or ((not chain) and (SMJ.StartsInsideDungeon(quest.pickup)
+                or SMJ.StartItemDropsIn(quest, selectedDungeon))), rowIconOffset)
             -- With a chain control, the faction icons leave no room to its
             -- right: stack the dungeon icon on top of the chain control.
             if chain and button.chainToggle and button.dungeonStartIcon and button.dungeonStartIcon:IsShown() then
@@ -3808,11 +3887,17 @@ RefreshQuestList = function()
                     local prefix = tostring(chainIndex) .. ". "
                     if step.id and IsQuestFinished(step.id) then
                         if row.statusIcon then
-                            row.statusIcon:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
+                            -- Still to hand in: the quest ? instead of the tick.
+                            row.statusIcon:SetTexture(SMJ.QuestTurnedIn(step.id) and "Interface\\RaidFrame\\ReadyCheck-Ready"
+                                or "Interface\\GossipFrame\\ActiveQuestIcon")
                             row.statusIcon:SetTexCoord(0, 1, 0, 1)
                             row.statusIcon:Show()
                         end
-                        row.text:SetTextColor(0.45, 0.95, 0.50)
+                        if SMJ.QuestTurnedIn(step.id) then
+                            row.text:SetTextColor(0.45, 0.95, 0.50)
+                        else
+                            row.text:SetTextColor(1.00, 0.83, 0.28)
+                        end
                     elseif step.id and IsQuestInLog(step.id) then
                         row.text:SetTextColor(1.00, 0.83, 0.28)
                     else
@@ -3935,12 +4020,15 @@ RefreshQuestList = function()
             end
 
             button.meta:SetTextColor(unpack(theme.muted))
-            button.completeGlow:SetShown(complete)
-            button.check:SetShown(complete)
+            button.completeGlow:SetShown(complete and not ready)
+            button.check:SetShown(complete and not (ready and button.turnIn))
+            if button.turnIn then
+                SMJ.SetTurnInButton(button.turnIn, ready and quest or nil, QuestField(quest.id, "name", quest.name))
+            end
             if button.UpdateHaveItLabel then button:UpdateHaveItLabel() end
             button.haveIt:SetShown(inLog and not complete)
 
-            if complete then
+            if complete and not ready then
                 button.name:SetTextColor(0.30, 1.00, 0.36)
             end
 
@@ -3972,6 +4060,7 @@ RefreshQuestList = function()
     contentHeight = math.max(1, contentHeight - 3)
     frame.questContent:SetHeight(contentHeight)
     UpdateScrollBarVisibility(frame.questListScroll, contentHeight)
+    if SMJ.UpdateQuestTrackButton then SMJ.UpdateQuestTrackButton(selectedDungeon) end -- questtracker
 end
 
 local function GetQuestLogIndexForQuestIDSafe(questID)
@@ -4172,7 +4261,7 @@ end
 
 SMJ.PlaceStepItemButtons = function(items, startIndex, cursorY, width)
     frame.questStepItemButtons = frame.questStepItemButtons or {}
-    local theme = THEMES[selectedDungeon] or THEMES["Hall of Thanes"]
+    local theme = THEMES[selectedDungeon] or THEMES.default
     for i, item in ipairs(items) do
         local index = startIndex + i
         local button = frame.questStepItemButtons[index]
@@ -4272,7 +4361,11 @@ local function RefreshPrerequisiteQuestDetail(step)
     if frame.selectedQuestClass then frame.selectedQuestClass:Hide() end
     if frame.selectedQuestClassIcon then frame.selectedQuestClassIcon:Hide() end
     if frame.selectedQuestMetaClassIcon then frame.selectedQuestMetaClassIcon:Hide() end
-    frame.selectedQuestComplete:SetShown(complete)
+    local stepReady = complete and not SMJ.QuestTurnedIn(questID)
+    frame.selectedQuestComplete:SetShown(complete and not (stepReady and frame.selectedQuestTurnIn))
+    if frame.selectedQuestTurnIn then
+        SMJ.SetTurnInButton(frame.selectedQuestTurnIn, stepReady and { id = questID, turnin = details.turnin } or nil, title)
+    end
     UpdatePrerequisiteNavButtons()
 
     -- Prerequisite/quest-chain steps use the same shareability control as
@@ -4462,7 +4555,7 @@ local function RefreshPrerequisiteQuestDetail(step)
             frame.questStartItemButton.icon:SetTexture(obj[2] or "Interface\\Icons\\INV_Misc_QuestionMark")
             frame.questStartItemButton.name:SetText(FreeText(obj[1]))
             frame.questStartItemButton.name:SetTextColor(1, 1, 1)
-            local objTheme = THEMES[selectedDungeon] or THEMES["Hall of Thanes"]
+            local objTheme = THEMES[selectedDungeon] or THEMES.default
             frame.questStartItemButton:SetBackdropColor(unpack(objTheme.lootRow))
             frame.questStartItemButton:SetBackdropBorderColor(unpack(objTheme.border))
             frame.questStartItemButton:SetPoint("TOPLEFT", frame.questDetailContent, "TOPLEFT", 0, -cursorY)
@@ -4485,7 +4578,7 @@ local function RefreshPrerequisiteQuestDetail(step)
             local itemName = ItemInfo(startItem[1])
             frame.questStartItemButton.name:SetText(itemName or startItem[2])
             frame.questStartItemButton.name:SetTextColor(1, 1, 1)
-            local itemTheme = THEMES[selectedDungeon] or THEMES["Hall of Thanes"]
+            local itemTheme = THEMES[selectedDungeon] or THEMES.default
             frame.questStartItemButton:SetBackdropColor(unpack(itemTheme.lootRow))
             frame.questStartItemButton:SetBackdropBorderColor(unpack(itemTheme.border))
             frame.questStartItemButton:SetPoint("TOPLEFT", frame.questDetailContent, "TOPLEFT", 0, -cursorY)
@@ -4643,7 +4736,7 @@ local function RefreshPrerequisiteQuestDetail(step)
                 local r, g, b = GetAuthoritativeItemQuality(item[1], itemLink, quality, item[3] or 1)
                 button.name:SetText(itemName or item[2])
                 button.name:SetTextColor(r, g, b)
-                local theme = THEMES[selectedDungeon] or THEMES["Hall of Thanes"]
+                local theme = THEMES[selectedDungeon] or THEMES.default
                 button:SetBackdropColor(unpack(theme.lootRow))
                 button:SetBackdropBorderColor(unpack(theme.border))
 
@@ -4745,6 +4838,7 @@ RefreshQuestDetail = function()
         if frame.selectedQuestClassIcon then frame.selectedQuestClassIcon:Hide() end
         if frame.selectedQuestMetaClassIcon then frame.selectedQuestMetaClassIcon:Hide() end
         frame.selectedQuestComplete:Hide()
+        if frame.selectedQuestTurnIn then frame.selectedQuestTurnIn:Hide() end
         if frame.questShareButton then frame.questShareButton.questID = nil; frame.questShareButton:Hide() end
         if frame.questDetailScroll then frame.questDetailScroll:Hide() end
         if frame.noQuestMessage then
@@ -4792,7 +4886,7 @@ RefreshQuestDetail = function()
     if frame.questTurninText then frame.questTurninText:SetWidth(detailWidth) end
     if frame.questNotesText then frame.questNotesText:SetWidth(detailWidth) end
     local rewardWidth = math.floor((detailWidth - 10) / 2)
-    local theme = THEMES[selectedDungeon] or THEMES["Hall of Thanes"]
+    local theme = THEMES[selectedDungeon] or THEMES.default
     local complete = IsQuestFinished(quest.id)
 
     frame.selectedQuestName:SetText(QuestField(quest.id, "name", quest.name))
@@ -4859,7 +4953,11 @@ RefreshQuestDetail = function()
     frame.questDetailScroll:SetPoint("BOTTOMRIGHT", -31, 16)
 
     if frame.selectedQuestComplete then
-        frame.selectedQuestComplete:SetShown(complete)
+        local ready = complete and not SMJ.QuestTurnedIn(quest.id)
+        frame.selectedQuestComplete:SetShown(complete and not (ready and frame.selectedQuestTurnIn))
+        if frame.selectedQuestTurnIn then
+            SMJ.SetTurnInButton(frame.selectedQuestTurnIn, ready and quest or nil, QuestField(quest.id, "name", quest.name))
+        end
     end
 
     -- Keep the body text identical to Blizzard's parchment quest text. Only
@@ -4999,7 +5097,8 @@ RefreshQuestDetail = function()
         frame.questStartItemButton:Show()
         if frame.questStartDungeonIcon then
             frame.questStartDungeonIcon:Hide()
-            if quest.startsInDungeon or (SMJ.StartsInsideDungeon(quest.pickup) and not QUEST_PREREQ_CHAINS[quest.id]) then SMJ.PositionInDungeonIcon() end
+            if quest.startsInDungeon or ((SMJ.StartsInsideDungeon(quest.pickup) or SMJ.StartItemDropsIn(quest, selectedDungeon))
+                and not QUEST_PREREQ_CHAINS[quest.id]) then SMJ.PositionInDungeonIcon() end
         end
         cursorY = cursorY + 44
     elseif quest.startItem then
@@ -5021,7 +5120,8 @@ RefreshQuestDetail = function()
         frame.questStartItemButton:Show()
         if frame.questStartDungeonIcon then
             frame.questStartDungeonIcon:Hide()
-            if quest.startsInDungeon or (SMJ.StartsInsideDungeon(quest.pickup) and not QUEST_PREREQ_CHAINS[quest.id]) then SMJ.PositionInDungeonIcon() end
+            if quest.startsInDungeon or ((SMJ.StartsInsideDungeon(quest.pickup) or SMJ.StartItemDropsIn(quest, selectedDungeon))
+                and not QUEST_PREREQ_CHAINS[quest.id]) then SMJ.PositionInDungeonIcon() end
         end
         cursorY = cursorY + 44
     else
@@ -5923,6 +6023,7 @@ SMJ.RenderCustomDungeonMap = function(data, floorIndex)
         -- texture aliases which are missing on certain localized Forever clients.
         local apiTextures, apiLayer
         frame.dungeonMapArtMissing = false
+        frame.dungeonMapArtCopy = false
         if floorData.uiMapID and C_Map and C_Map.GetMapArtLayers and C_Map.GetMapArtLayerTextures then
             -- The stored map ID first; if this client has no art under it, the
             -- map found by the dungeon's name (see Systems/MapArtFinder.lua).
@@ -5948,6 +6049,7 @@ SMJ.RenderCustomDungeonMap = function(data, floorIndex)
             local tileH = tonumber(apiLayer.tileHeight) or 256
             local cols = math.max(1, math.ceil(layerW / tileW))
             local scaleX, scaleY = artW / layerW, artH / layerH
+            local unloaded = false
             for i = 1, #apiTextures do
                 local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
                 local t = Tile(i)
@@ -5955,29 +6057,55 @@ SMJ.RenderCustomDungeonMap = function(data, floorIndex)
                 t:SetPoint("TOPLEFT", holder, "TOPLEFT", col * tileW * scaleX, -row * tileH * scaleY)
                 -- If a file ID does not load on this client, try the tile's path.
                 local loaded = t:SetTexture(apiTextures[i])
-                if loaded == false and floorData.tiles then t:SetTexture(floorData.tiles .. i) end
+                if loaded == false and floorData.tiles then loaded = t:SetTexture(floorData.tiles .. i) end
+                if loaded == false then unloaded = true end
                 t:SetTexCoord(0, 1, 0, 1)
                 t:SetDrawLayer("ARTWORK", 0)
                 t:Show()
             end
+            -- The game lists the map's pictures but this client cannot load
+            -- them: the journal's own copy of the map instead.
+            local copy = unloaded and SMJ.MapArtCopy and SMJ.MapArtCopy(floorData)
+            if copy then
+                for i = 2, #apiTextures do Tile(i):Hide() end
+                local t = Tile(1)
+                t:SetAllPoints(holder)
+                t:SetTexture(copy)
+                t:SetTexCoord(0, 1002 / 1024, 0, 668 / 1024)
+                t:Show()
+                frame.dungeonMapArtCopy = true
+            end
         else
             -- Legacy fallback for clients where the map-art API is unavailable.
             -- Some localized clients (ruRU) do not have these map files at all:
-            -- the file name then has no file ID. Show a plain parchment instead
-            -- of black/green tiles, so the boss pins stay readable.
+            -- the file name then has no file ID. The journal then shows its own
+            -- copy of the map (Media\Maps, the patches already on it); a map
+            -- without a copy gets a plain parchment instead of black/green
+            -- tiles, so the boss pins stay readable.
             local scale = artW / 1002
             local first = Tile(1)
             first:SetTexture(floorData.tiles .. 1)
             frame.dungeonMapArtMissing = SMJ.forceMissingMapArt
                 or (first.GetTextureFileID and not first:GetTextureFileID()) or false
+            local copy = frame.dungeonMapArtMissing and SMJ.MapArtCopy and SMJ.MapArtCopy(floorData)
+            if copy then
+                frame.dungeonMapArtMissing = false
+                frame.dungeonMapArtCopy = true
+            end
             for i = 1, 12 do
                 local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
                 local t = Tile(i)
                 t:ClearAllPoints()
-                if frame.dungeonMapArtMissing then
+                if copy or frame.dungeonMapArtMissing then
                     if i == 1 then
                         t:SetAllPoints(holder)
-                        t:SetColorTexture(0.42, 0.33, 0.20, 1)
+                        if copy then
+                            -- 1002x668 map, top-left in a 1024x1024 texture.
+                            t:SetTexture(copy)
+                            t:SetTexCoord(0, 1002 / 1024, 0, 668 / 1024)
+                        else
+                            t:SetColorTexture(0.42, 0.33, 0.20, 1)
+                        end
                         t:SetDrawLayer("ARTWORK", 0)
                         t:Show()
                     else
@@ -5998,7 +6126,8 @@ SMJ.RenderCustomDungeonMap = function(data, floorIndex)
                 frame.dungeonMapArtMissing and not apiTextures)
         end
         -- Parchment patches that cover the map's printed title banner.
-        for p, patch in ipairs((not (frame.dungeonMapArtMissing and not apiTextures)) and floorData.patches or {}) do
+        for p, patch in ipairs((not (frame.dungeonMapArtMissing and not apiTextures)) and not frame.dungeonMapArtCopy
+            and floorData.patches or {}) do
             local t = Tile(12 + p)
             t:SetDrawLayer("ARTWORK", 1)
             t:SetPoint("TOPLEFT", holder, "TOPLEFT", patch.x0 * artW, -patch.y0 * artH)
@@ -6242,6 +6371,68 @@ SMJ.RenderCustomDungeonMap = function(data, floorIndex)
     end
     for i = nObj + 1, #frame.dungeonMapObjectives do
         frame.dungeonMapObjectives[i]:Hide()
+    end
+
+    -- Yellow ? on the NPC a quest is handed in to, set by the quest tracker's
+    -- ? button; stays until the quest leaves the log or it is right-clicked.
+    -- The tracker's ! puts a yellow ! on the giver instead, until the quest
+    -- is taken.
+    local turnIn = SMJ.dungeonTurnIns and SMJ.dungeonTurnIns[data]
+    if turnIn and turnIn.questID then
+        local gone
+        if turnIn.start then
+            gone = IsQuestInLog(turnIn.questID) or SMJ.QuestTurnedIn(turnIn.questID)
+        else
+            gone = not IsQuestInLog(turnIn.questID)
+        end
+        if gone then
+            SMJ.dungeonTurnIns[data] = nil
+            turnIn = nil
+        end
+    end
+    local mark = frame.dungeonMapTurnIn
+    if turnIn and turnIn.floor == floorIndex and turnIn.x and turnIn.y then
+        if not mark then
+            mark = CreateFrame("Button", nil, holder)
+            mark:RegisterForClicks("RightButtonUp")
+            mark.icon = mark:CreateTexture(nil, "OVERLAY")
+            mark.icon:SetAllPoints()
+            mark.icon:SetTexture("Interface\\GossipFrame\\ActiveQuestIcon")
+            mark:SetScript("OnEnter", function(self)
+                local t = self.turnIn
+                if not t then return end
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                local text = (SMJ.LocalizeFreeText and SMJ.LocalizeFreeText(t.npc)) or t.npc or ""
+                if type(t.title) == "string" and t.title ~= "" then text = text .. " \226\128\148 " .. t.title end
+                GameTooltip:SetText(text)
+                GameTooltip:AddLine(L(t.start and "QUEST_STARTS_HERE" or "TURN_IN_HERE"), 1, 0.82, 0.05)
+                GameTooltip:AddLine(L("MAP_RIGHT_REMOVE"), 1, 1, 1)
+                GameTooltip:Show()
+            end)
+            mark:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            mark:SetScript("OnClick", function(self, button)
+                if button ~= "RightButton" then return end
+                for key, value in pairs(SMJ.dungeonTurnIns or {}) do
+                    if value == self.turnIn then SMJ.dungeonTurnIns[key] = nil end
+                end
+                self.turnIn = nil
+                self:Hide()
+                GameTooltip:Hide()
+            end)
+            frame.dungeonMapTurnIn = mark
+        end
+        if mark:GetParent() ~= holder then mark:SetParent(holder) end
+        mark.turnIn = turnIn
+        mark.icon:SetTexture(turnIn.start and "Interface\\GossipFrame\\AvailableQuestIcon" or "Interface\\GossipFrame\\ActiveQuestIcon")
+        local size = math.max(24, math.floor(baseH * 0.08))
+        mark:SetSize(size, size)
+        mark:SetFrameLevel(holder:GetFrameLevel() + 16)
+        mark:ClearAllPoints()
+        mark:SetPoint("CENTER", holder, "TOPLEFT", turnIn.x * artW, -(turnIn.y * artH))
+        mark:Show()
+    elseif mark then
+        mark.turnIn = nil
+        mark:Hide()
     end
 end
 
@@ -6589,6 +6780,10 @@ end
 
 -- Used by Systems/SettingsPanel.lua.
 SMJ.IsQuestFinished = IsQuestFinished
+-- questtracker: the on-screen quest tracker (Systems/QuestText.lua) reads
+-- the quest log and the list's faction/class filter through these.
+SMJ.IsQuestInLog = IsQuestInLog
+SMJ.QuestMatchesFaction = QuestMatchesFaction
 SMJ.RefreshHomeCards = function()
     if RefreshHomeDungeonCards then RefreshHomeDungeonCards() end
 end
@@ -6821,7 +7016,7 @@ RefreshBossList = function()
                 button.levelText:Hide()
             end
 
-            local theme = THEMES[selectedDungeon] or THEMES["Hall of Thanes"]
+            local theme = THEMES[selectedDungeon] or THEMES.default
 
             if selectedBoss == i then
                 button:SetBackdropColor(unpack(theme.rowSelected))
@@ -7122,7 +7317,7 @@ RefreshLoot = function()
                 row.slot:SetPoint("RIGHT", inset, 0)
             end
 
-            local theme = THEMES[selectedDungeon] or THEMES["Hall of Thanes"]
+            local theme = THEMES[selectedDungeon] or THEMES.default
             row:SetBackdropColor(unpack(theme.lootRow))
             row:SetBackdropBorderColor(unpack(theme.border))
             row.slot:SetTextColor(unpack(theme.muted))
@@ -7286,7 +7481,7 @@ end
 local function ApplyTheme()
     if not frame then return end
 
-    local theme = THEMES[selectedDungeon] or THEMES["Hall of Thanes"]
+    local theme = THEMES[selectedDungeon] or THEMES.default
 
     frame:SetBackdropColor(unpack(theme.frame))
     frame.contentPanel:SetBackdropColor(unpack(theme.content))
@@ -8646,11 +8841,56 @@ local function CreateMainFrame()
         SetMode("bosses")
         if bossIndex then SelectBoss(bossIndex) end
     end
+    -- Quest tracker: the ? of a quest handed in inside a dungeon opens that
+    -- dungeon's map on the NPC's level, with a yellow ? on the NPC (start:
+    -- the ! of a quest picked up there, a yellow ! on the giver).
+    SMJ.ShowTurnInOnDungeonMap = function(dungeonName, spot, questTitle, questID, start)
+        local mapData = SMJ.DUNGEON_MAPS[dungeonName]
+        if not DB[dungeonName] or not mapData or type(spot) ~= "table" then return end
+        local floor = spot.floor or 1
+        SMJ.dungeonTurnIns = SMJ.dungeonTurnIns or {}
+        SMJ.dungeonTurnIns[mapData] = { floor = floor, x = spot.x, y = spot.y, npc = spot.npc, title = questTitle, questID = questID, start = start and true or nil }
+        SelectDungeon(dungeonName)
+        if selectedDungeon ~= dungeonName then return end
+        ShowDungeonMap()
+        if frame.dungeonMapFloor ~= floor then
+            SMJ.ResetDungeonMapView()
+            SMJ.RenderCustomDungeonMap(mapData, floor)
+        end
+    end
     SMJ.OpenQuestPage = function(dungeonName, questID)
         if not DB[dungeonName] then return end
         SelectDungeon(dungeonName)
         SetMode("quests")
         if SelectQuestByID then SelectQuestByID(questID) end
+    end
+    -- questtracker: a chain step clicked in the quest tracker opens that
+    -- step's page, with the quest's chain unfolded in the list (what Show
+    -- Quest Chain does, for the given step).
+    SMJ.OpenQuestChainStep = function(dungeonName, questID, stepID)
+        if not DB[dungeonName] then return end
+        SelectDungeon(dungeonName)
+        if selectedDungeon ~= dungeonName then return end
+        SetMode("quests")
+        if SelectQuestByID then SelectQuestByID(questID) end
+        local chain = questID and QUEST_PREREQ_CHAINS[questID]
+        if type(chain) ~= "table" then return end
+        local target
+        for _, step in ipairs(chain) do
+            if step.id and step.id == stepID then target = step break end
+        end
+        if not target then return end
+        local parentName
+        for _, quest in ipairs(DB[dungeonName].quests or {}) do
+            if quest.id == questID then parentName = quest.name break end
+        end
+        expandedQuestChains[questID] = true
+        selectedPrereqStep = target
+        selectedPrereqParentQuestName = parentName
+        selectedPrereqParentQuestID = questID
+        if target.id then RequestQuestRewardData(target.id) end
+        RefreshQuestList()
+        RefreshQuestDetail()
     end
     SMJ.RefreshLootNow = function()
         if selectedDungeon and DB[selectedDungeon] and frame.lootContent then pcall(RefreshLoot) end
@@ -9055,6 +9295,7 @@ local function CreateMainFrame()
 
     frame.hordeQuestButton = CreateFactionButton("Horde", -10, HORDE_ICON)
     frame.allianceQuestButton = CreateFactionButton("Alliance", -66, ALLIANCE_ICON)
+    if SMJ.CreateQuestTrackButton then SMJ.CreateQuestTrackButton(frame, questLeft) end -- questtracker
 
     local questScroll = CreateFrame(
         "ScrollFrame",
@@ -9149,6 +9390,12 @@ local function CreateMainFrame()
     frame.selectedQuestComplete:SetSize(24, 24)
     frame.selectedQuestComplete:SetPoint("TOPRIGHT", -16, -11)
     frame.selectedQuestComplete:Hide()
+    -- Ready to hand in: the round ? (shows where) in place of the tick.
+    if SMJ.CreateTurnInButton then
+        frame.selectedQuestTurnIn = SMJ.CreateTurnInButton(questInset, 34)
+        frame.selectedQuestTurnIn:SetPoint("CENTER", frame.selectedQuestComplete, "CENTER", 0, 0)
+        frame.selectedQuestTurnIn:SetFrameLevel(questInset:GetFrameLevel() + 8)
+    end
 
     frame.questShareButton = CreateFrame("Button", nil, questInset, "BackdropTemplate")
     frame.questShareButton:SetSize(76, 24)
@@ -9466,6 +9713,7 @@ local function CreateMainFrame()
         -- Targeting and raid marking, when the quest giver is nearby, are handled
         -- by the secure hardware-click macro configured for this button.
         SMJ.pendingMarkerQuestTitle = self.fdjQuestTitle
+        SMJ.pendingMarkerTurnIn = (self == frame.questTurninMapButton) or nil
         if self.prereqLocation then
             ShowRecordedLocationOnMap(self.prereqLocation, self.prereqLocation.label)
         else
@@ -9846,12 +10094,7 @@ local function CreateMainFrame()
         -- combat: doing all of it inside OnShow can exceed the client's script
         -- time limit when the journal is opened mid-fight.
         if SMJ.PrewarmBossPortraits and not SMJ.portraitsPrewarmed then
-            local function prewarm()
-                if SMJ.portraitsPrewarmed then return end
-                if type(InCombatLockdown) == "function" and InCombatLockdown() then return end
-                SMJ.portraitsPrewarmed = true
-                pcall(SMJ.PrewarmBossPortraits)
-            end
+            local function prewarm() pcall(SMJ.PrewarmBossPortraits) end
             if C_Timer and C_Timer.After then C_Timer.After(0.1, prewarm) else prewarm() end
         end
 
@@ -10420,13 +10663,15 @@ SMJ.events:SetScript("OnEvent", function(_, event, arg1, arg2)
         elseif GetAddOnMetadata then
             addonVersion = GetAddOnMetadata("SentinelMentor", "Version")
         end
-        addonVersion = (addonVersion and tostring(addonVersion)) or "1.6.7"
+        addonVersion = (addonVersion and tostring(addonVersion)) or "1.7.0"
         print("|cffd8a83cDungeon Journal by Exehn|r |cffffffffv" .. addonVersion .. "|r")
         return
     end
 
     if event == "PLAYER_LEAVING_WORLD" then
-        -- v1.0.23 performs no portrait work during zoning.
+        -- No portrait work during zoning: the warm-up and the lookups wait.
+        SMJ.portraitZoning = true
+        SMJ.portraitZoneSerial = (SMJ.portraitZoneSerial or 0) + 1
         return
     end
 
@@ -10492,6 +10737,19 @@ SMJ.events:SetScript("OnEvent", function(_, event, arg1, arg2)
                     RefreshAll()
                 end
             end)
+            -- Portrait work resumes once the world has settled; the first
+            -- time, the warm-up starts a few seconds later.
+            local serial = SMJ.portraitZoneSerial
+            C_Timer.After(2, function()
+                if SMJ.portraitZoneSerial ~= serial then return end
+                SMJ.portraitZoning = false
+                if portraitResolver and #portraitResolveQueue > 0 then portraitResolver:Show() end
+            end)
+            if not SMJ.portraitsPrewarmed then
+                C_Timer.After(6, function()
+                    if SMJ.PrewarmBossPortraits then pcall(SMJ.PrewarmBossPortraits) end
+                end)
+            end
         end
         return
     end

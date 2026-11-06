@@ -293,7 +293,6 @@ SMJ.DUNGEON_HOME_BOTTOM_BAND = {
     ["City of Dalaran"] = { 0.36, 0.26, 0.42, 4 },
 }
 
-
 -- Sentinel default: neutral dark chrome with the gold accent, used whenever a
 -- dungeon has no theme of its own.
 SMJ.THEMES.default = {
