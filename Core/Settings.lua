@@ -389,8 +389,8 @@ function SentinelMentor:InitializeSettings()
         icon = SentinelMentor:GetAddonIcon(),
         dbtab = SentinelMentor_Character,
         dbkey = "showMinimapButton",
-        vTT = {{"SentinelMentor"}, {self:Trans("LID_SETTINGS_OPEN")}},
-        funcL = function() self:ToggleSettings() end,
+        vTT = {{"SentinelMentor"}, {self:Trans("LID_OPENJOURNAL")}, {self:Trans("LID_SETTINGS_OPEN")}},
+        funcL = function() if SentinelMentorJournal_Toggle then SentinelMentorJournal_Toggle() end end,
         funcR = function() self:ToggleSettings() end
     })
 

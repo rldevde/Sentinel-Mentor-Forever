@@ -832,9 +832,7 @@ events:SetScript("OnEvent", function(_, event, ...)
         if SMJ.UpdateMinimapIcon then pcall(SMJ.UpdateMinimapIcon) end
         if chooserPending then return end
         chooserPending = true
-        if CharDB().journalMode == nil and C_Timer and C_Timer.After then
-            C_Timer.After(3, function() SMJ.ShowModeChooser(false) end)
-        end
+        if CharDB().journalMode == nil then CharDB().journalMode = "gamer" end
     end
 end)
 
