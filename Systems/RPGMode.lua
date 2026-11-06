@@ -832,158 +832,12 @@ events:SetScript("OnEvent", function(_, event, ...)
         if SMJ.UpdateMinimapIcon then pcall(SMJ.UpdateMinimapIcon) end
         if chooserPending then return end
         chooserPending = true
-        if CharDB().journalMode == nil then CharDB().journalMode = "gamer" end
+        local cdb = CharDB()
+        if cdb.journalMode == nil then cdb.journalMode = "gamer" end
+        if cdb.rpgIntroSeen == nil then cdb.rpgIntroSeen = true end
     end
 end)
 
--- ---------------------------------------------------------- mode chooser
-local chooser
-local function OptionCard(parent, icon, titleKey, descKey, mode)
-    local c = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    c:SetSize(250, 230)
-    c:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 14,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-    c:SetBackdropColor(0.09, 0.07, 0.05, 0.96)
-    c:SetBackdropBorderColor(0.55, 0.43, 0.24, 1)
-    local ic = c:CreateTexture(nil, "ARTWORK")
-    ic:SetSize(52, 52)
-    ic:SetPoint("TOP", 0, -18)
-    ic:SetTexture(icon)
-    ic:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    c.title = c:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    c.title:SetPoint("TOP", ic, "BOTTOM", 0, -10)
-    c.desc = c:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    c.desc:SetPoint("TOP", c.title, "BOTTOM", 0, -10)
-    c.desc:SetWidth(222)
-    c.desc:SetJustifyH("CENTER")
-    c.titleKey, c.descKey = titleKey, descKey
-    local pick = CreateFrame("Button", nil, c, "UIPanelButtonTemplate")
-    pick:SetSize(150, 24)
-    pick:SetPoint("BOTTOM", 0, 14)
-    c.pick = pick
-    local function Apply()
-        SMJ.SetJournalMode(mode)
-        if PlaySound and SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then
-            pcall(PlaySound, SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-        end
-        parent:Hide()
-    end
-    local function Choose()
-        -- RPG Mode hides content, so make sure the player knows what they picked.
-        if mode == "rpg" and SMJ.ShowRPGConfirm then
-            SMJ.ShowRPGConfirm(parent, Apply)
-        else
-            Apply()
-        end
-    end
-    pick:SetScript("OnClick", Choose)
-    c:SetScript("OnClick", Choose)
-    c:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(1.00, 0.82, 0.30, 1) end)
-    c:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(0.55, 0.43, 0.24, 1) end)
-    return c
-end
-
--- "Are you sure?" box shown over the chooser when RPG Mode is picked.
-local confirm
-function SMJ.ShowRPGConfirm(parent, onOk)
-    if not confirm then
-        confirm = CreateFrame("Frame", "SentinelMentorJournalRPGConfirm", UIParent, "BackdropTemplate")
-        confirm:SetSize(400, 150)
-        confirm:SetFrameStrata("FULLSCREEN_DIALOG")
-        confirm:SetToplevel(true)
-        confirm:EnableMouse(true)
-        confirm:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Gold-Border",
-            edgeSize = 26,
-            insets = { left = 7, right = 7, top = 7, bottom = 7 },
-        })
-        confirm:SetBackdropColor(0.04, 0.035, 0.03, 0.98)
-        confirm.text = confirm:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        confirm.text:SetPoint("TOP", 0, -26)
-        confirm.text:SetWidth(352)
-        confirm.text:SetJustifyH("CENTER")
-        confirm.text:SetJustifyV("TOP")
-        if confirm.text.SetWordWrap then confirm.text:SetWordWrap(true) end
-        if confirm.text.SetNonSpaceWrap then confirm.text:SetNonSpaceWrap(true) end
-        if confirm.text.SetMaxLines then confirm.text:SetMaxLines(0) end
-        confirm.ok = CreateFrame("Button", nil, confirm, "UIPanelButtonTemplate")
-        confirm.ok:SetSize(130, 24)
-        confirm.ok:SetPoint("BOTTOMRIGHT", confirm, "BOTTOM", -6, 20)
-        confirm.back = CreateFrame("Button", nil, confirm, "UIPanelButtonTemplate")
-        confirm.back:SetSize(130, 24)
-        confirm.back:SetPoint("BOTTOMLEFT", confirm, "BOTTOM", 6, 20)
-        confirm.back:SetScript("OnClick", function() confirm:Hide() end)
-    end
-    confirm.text:SetText(L("RPG_CONFIRM_TEXT"))
-    confirm.ok:SetText(L("RPG_CONFIRM_OK"))
-    confirm.back:SetText(L("RPG_CONFIRM_BACK"))
-    -- Size the box to the wrapped text (CJK and German run long).
-    confirm.text:SetHeight(0)
-    local textHeight = math.max(confirm.text:GetStringHeight() or 0, 40)
-    confirm.text:SetHeight(textHeight + 4)
-    confirm:SetHeight(textHeight + 100)
-    confirm.ok:SetScript("OnClick", function() confirm:Hide() onOk() end)
-    confirm:ClearAllPoints()
-    confirm:SetPoint("CENTER", parent or UIParent, "CENTER", 0, 0)
-    confirm:SetFrameLevel(((parent and parent:GetFrameLevel()) or 1) + 20)
-    confirm:Show()
-end
-
-function SMJ.ShowModeChooser(force)
-    if not force and CharDB().journalMode ~= nil then return end
-    if not chooser then
-        chooser = CreateFrame("Frame", "SentinelMentorJournalModeChooser", UIParent, "BackdropTemplate")
-        chooser:SetSize(580, 360)
-        chooser:SetPoint("CENTER", 0, 60)
-        chooser:SetFrameStrata("FULLSCREEN_DIALOG")
-        chooser:EnableMouse(true)
-        chooser:SetMovable(true)
-        chooser:RegisterForDrag("LeftButton")
-        chooser:SetScript("OnDragStart", chooser.StartMoving)
-        chooser:SetScript("OnDragStop", chooser.StopMovingOrSizing)
-        chooser:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Gold-Border",
-            edgeSize = 26,
-            insets = { left = 7, right = 7, top = 7, bottom = 7 },
-        })
-        chooser:SetBackdropColor(0.04, 0.035, 0.03, 0.97)
-        local icon = chooser:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(26, 26)
-        icon:SetPoint("TOPLEFT", 20, -18)
-        icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
-        icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-        chooser.title = chooser:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        chooser.title:SetPoint("LEFT", icon, "RIGHT", 8, 0)
-        chooser.sub = chooser:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        chooser.sub:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", 0, -8)
-        chooser.sub:SetTextColor(0.75, 0.72, 0.66)
-        chooser.gamer = OptionCard(chooser, "Interface\\Icons\\INV_Misc_Book_09", "MODE_GAMER", "MODE_GAMER_DESC", "gamer")
-        chooser.gamer:SetPoint("BOTTOMLEFT", 30, 24)
-        chooser.rpg = OptionCard(chooser, "Interface\\AddOns\\SentinelMentor\\Media\\RPGJournalIcon", "MODE_RPG", "MODE_RPG_DESC", "rpg")
-        chooser.rpg:SetPoint("BOTTOMRIGHT", -30, 24)
-        local close = CreateFrame("Button", nil, chooser, "UIPanelCloseButton")
-        close:SetPoint("TOPRIGHT", -4, -4)
-        -- Closing without picking keeps the usual journal.
-        close:SetScript("OnClick", function()
-            if CharDB().journalMode == nil then SMJ.SetJournalMode("gamer") end
-            chooser:Hide()
-        end)
-    end
-    chooser.title:SetText(L("MODE_TITLE"))
-    chooser.sub:SetText(L("MODE_SUB"))
-    for _, c in ipairs({ chooser.gamer, chooser.rpg }) do
-        c.title:SetText(L(c.titleKey))
-        c.desc:SetText(L(c.descKey))
-        c.pick:SetText(L("MODE_CHOOSE"))
-    end
-    chooser:Show()
-end
 
 -- BEGIN rpgintro
 -- ------------------------------------------------- RPG Mode note and button
@@ -1235,38 +1089,6 @@ SMJ.UpdateRPGHeader = function(frame, ...)
 end
 
 -- Turning RPG Mode on (chooser, options, /smj mode) shows the note again once.
-local SetJournalModeWithoutIntro = SMJ.SetJournalMode
-SMJ.SetJournalMode = function(mode, ...)
-    local db = CharDB()
-    if mode == "rpg" and db.journalMode ~= "rpg" then db.rpgIntroSeen = nil end
-    return SetJournalModeWithoutIntro(mode, ...)
-end
-
--- Mode chooser (first login, /smj mode): RPG Mode is not switched on from
--- here. Its button reads "Enable in Options" and opens the options on the
--- RPG Mode box, which the player ticks themselves, so they know where it is.
--- Until then the journal stays in Gamer Mode (and the chooser is answered).
-local ShowModeChooserWithoutOptions = SMJ.ShowModeChooser
-SMJ.ShowModeChooser = function(force, ...)
-    ShowModeChooserWithoutOptions(force, ...)
-    local chooser = _G.SentinelMentorJournalModeChooser
-    local card = chooser and chooser.rpg
-    if not (card and card.pick) then return end
-    card.pick:SetText(L("MODE_RPG_ENABLE"))
-    local fs = card.pick:GetFontString()
-    card.pick:SetWidth(math.max(150, math.min(230, math.ceil((fs and fs:GetStringWidth() or 0) + 30))))
-    if card.fdjOptions then return end
-    card.fdjOptions = true
-    local function EnableInOptions()
-        if CharDB().journalMode == nil then SMJ.SetJournalMode("gamer") end
-        ClickSound()
-        chooser:Hide()
-        if SMJ.OpenSettingsAt then SMJ.OpenSettingsAt("OPT_RPG_MODE") end
-    end
-    card.pick:SetScript("OnClick", EnableInOptions)
-    card:SetScript("OnClick", EnableInOptions)
-end
-
 -- Dev: /smj devpopup puts this character back to its first login (no journal
 -- mode chosen, RPG note unseen; RPG progress is kept) and opens the mode
 -- chooser, to test the whole first-time flow.
@@ -1281,8 +1103,9 @@ if SlashWithoutDevPopup then
             if intro then intro:Hide() end
             if SMJ.RefreshHomeCards then pcall(SMJ.RefreshHomeCards) end
             if SMJ.UpdateMinimapIcon then pcall(SMJ.UpdateMinimapIcon) end
+            db.journalMode = "gamer"
+            db.rpgIntroSeen = true
             print("|cffd8a83cDungeon Journal:|r first-login popup (dev): journal mode reset for this character, RPG progress kept.")
-            SMJ.ShowModeChooser(false)
             return
         end
         return SlashWithoutDevPopup(msg, ...)

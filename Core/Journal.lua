@@ -10489,7 +10489,7 @@ SlashCmdList.SENTINELMENTORJOURNAL = function(msg)
         return
     end
     if msg == "mode" then
-        if SMJ.ShowModeChooser then SMJ.ShowModeChooser(true) end
+        if SMJ.SetJournalMode then SMJ.SetJournalMode(SMJ.IsRPGMode() and "gamer" or "rpg") end
         return
     end
     if msg == "worldmap" then
