@@ -1,0 +1,93 @@
+## Interface: 16001
+## Interface-Camelot: 16001
+## AllowLoadGameType: camelot
+## Version: 1.0.0
+## Title: |cffebad33Sentinel|r|cffffffffMentor|r
+## Title-deDE: |cffebad33Sentinel|r|cffffffffMentor|r
+## Notes: Shows everything class, pet and profession trainers can teach you.
+## Notes-deDE: Zeigt alles, was Klassen-, Begleiter- und Berufslehrer dir beibringen.
+## Author: xRL-Dev.de
+## Category: User Interface
+## Category-deDE: Benutzerinterface
+## DefaultState: enabled
+## SavedVariables: SentinelMentor_Global, SentinelMentor_Data, SentinelMentor_PetData, SentinelMentor_PetTrainerData, SentinelMentor_ProfessionData, SentinelMentor_IgnoredProfessions
+## SavedVariablesPerCharacter: SentinelMentor_Character, SentinelMentor_Ignored, SentinelMentor_IgnoredNames
+## IconTexture: Interface\AddOns\SentinelMentor\logo
+## Group: Sentinel
+## OptionalDeps: TomTom
+## X-Flavor: camelot
+## X-Website: https://xrl-dev.de/
+## X-BugTracker: https://xrl-dev.de/bugtracker
+## X-Impressum: https://xrl-dev.de/impressum
+## X-Copyright: (c) xRL-Dev.de — All rights reserved.
+
+Core\Compat.lua
+Core\Copyright.lua
+Core\Style.lua
+
+Locales\enUS.lua
+Locales\deDE.lua
+Locales\esES.lua
+Locales\esMX.lua
+Locales\frFR.lua
+Locales\itIT.lua
+Locales\koKR.lua
+Locales\ptBR.lua
+Locales\ruRU.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
+
+Data\Database.lua
+Data\Shaman.lua
+Data\Druid.lua
+Data\Mage.lua
+Data\Hunter.lua
+Data\HunterPet.lua
+Data\HunterBeasts.lua
+Data\WarlockPet.lua
+Data\Warrior.lua
+Data\Paladin.lua
+Data\Rogue.lua
+Data\Priest.lua
+Data\Warlock.lua
+Data\ClassTrainers.lua
+Data\PetTrainers.lua
+Data\PortalTrainers.lua
+Data\WeaponSkills.lua
+Data\Alchemy.lua
+Data\Blacksmithing.lua
+Data\Cooking.lua
+Data\Enchanting.lua
+Data\Engineering.lua
+Data\FirstAid.lua
+Data\Herbalism.lua
+Data\Leatherworking.lua
+Data\Mining.lua
+Data\Skinning.lua
+Data\Tailoring.lua
+Data\ProfessionTrainers.lua
+
+Core\Init.lua
+Core\Pricing.lua
+Core\Settings.lua
+Core\PetNames.lua
+Core\BuiltinMerge.lua
+Core\RecipeKnowledge.lua
+Core\TrainerCapture.lua
+Core\PetMerchantCapture.lua
+Core\TrainerListUI.lua
+Core\Ignore.lua
+Core\Export.lua
+Core\Events.lua
+Core\AutoRanks.lua
+
+UI\Core.lua
+UI\ClassData.lua
+UI\ClassList.lua
+UI\WeaponSkills.lua
+UI\TrainerLocations.lua
+UI\ClassTrainers.lua
+UI\Profession.lua
+UI\HunterBeasts.lua
+UI\HunterBeastsExtras.lua
+UI\Spellbook.lua

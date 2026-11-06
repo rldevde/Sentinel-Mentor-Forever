@@ -1,0 +1,1532 @@
+local _, SentinelMentor = ...
+local classFrame = SentinelMentor.ClassFrame
+local function GetCurrentProfessionSkill(professionName)
+    if ProfessionsFrame then
+        local professionInfo = ProfessionsFrame.GetProfessionInfo and ProfessionsFrame:GetProfessionInfo() or ProfessionsFrame.professionInfo
+        if type(professionInfo) == "table" and professionInfo.skillLevel then return professionInfo.skillLevel end
+    end
+
+    if not GetNumSkillLines or not GetSkillLineInfo or not professionName then return 0 end
+    for i = 1, GetNumSkillLines() do
+        local skillName, isHeader, _, skillRank = GetSkillLineInfo(i)
+        if not isHeader and skillName == professionName then return skillRank or 0 end
+    end
+    return 0
+end
+
+local professionFrame = CreateFrame("Frame", "SentinelMentorProfessionFrame", UIParent, "BackdropTemplate")
+
+professionFrame:SetSize(420, 480)
+professionFrame:SetFrameStrata("HIGH")
+professionFrame:SetFrameLevel(500)
+professionFrame:EnableMouse(true)
+professionFrame:Hide()
+local professionSearchBox = CreateFrame("EditBox", "SentinelMentorProfessionSearchBox", professionFrame, "SearchBoxTemplate")
+professionSearchBox:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", 8, -24)
+professionSearchBox:SetPoint("TOPRIGHT", professionFrame, "TOPRIGHT", -8, -24)
+professionSearchBox:SetHeight(20)
+professionSearchBox:SetAutoFocus(false)
+SentinelMentor.Style:SkinSearchBox(professionSearchBox)
+professionSearchBox:SetScript("OnTextChanged", function(self)
+    if SearchBoxTemplate_OnTextChanged then SearchBoxTemplate_OnTextChanged(self) end
+    SentinelMentor_ProfessionSearchText = self:GetText() or ""
+    SentinelMentor_ProfessionRefresh()
+end)
+
+SentinelMentor.ProfessionRowHeight = 32
+local professionScrollBox = CreateFrame("Frame", "SentinelMentorProfessionScrollBox", professionFrame, "WowScrollBoxList")
+professionScrollBox.smScrollTarget = professionScrollBox.ScrollTarget
+professionScrollBox.ScrollTarget = nil
+function professionScrollBox:GetScrollTarget() return self.smScrollTarget end
+professionScrollBox:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", 8, -4)
+professionScrollBox:SetPoint("BOTTOMRIGHT", professionFrame, "BOTTOMRIGHT", -26, 12)
+local professionListBg = professionFrame:CreateTexture("SentinelMentorProfessionBackground", "BACKGROUND")
+local professionScrollBar = CreateFrame("EventFrame", "SentinelMentorProfessionScrollBar", professionFrame, "MinimalScrollBar")
+professionScrollBar:SetPoint("TOPLEFT", professionScrollBox, "TOPRIGHT", 4, -2)
+professionScrollBar:SetPoint("BOTTOMLEFT", professionScrollBox, "BOTTOMRIGHT", 4, 2)
+local professionScrollView = CreateScrollBoxListLinearView()
+function professionScrollView:RefreshSmartNav() end
+professionScrollView:SetElementExtentCalculator(function(_, elementData)
+    if elementData.isHeader then return SentinelMentor.HeaderHeight + SentinelMentor.HeaderExtraGap end
+    return SentinelMentor.ProfessionRowHeight
+end)
+
+professionScrollView:SetPadding(0, 0, 0, 0, SentinelMentor.RowSpacing)
+professionScrollView:SetElementInitializer("Frame", function(rowFrame, elementData)
+    SentinelMentor:InitScrollRow(rowFrame, elementData, SentinelMentor.ProfessionRowHeight)
+    SentinelMentor:ApplyRowStripe(rowFrame, elementData)
+    SentinelMentor:ApplyRowInteraction(rowFrame)
+    SentinelMentor:PrepareGamepadNavigation(rowFrame)
+end)
+ScrollUtil.InitScrollBoxListWithScrollBar(professionScrollBox, professionScrollBar, professionScrollView)
+
+local function GetOpenProfession()
+    if GetTradeSkillLine then
+        local skillLineName = GetTradeSkillLine()
+        if skillLineName and skillLineName ~= "" then return SentinelMentor:GetProfessionKey(skillLineName), skillLineName end
+    end
+
+    local professionInfo = ProfessionsFrame and (ProfessionsFrame.GetProfessionInfo and ProfessionsFrame:GetProfessionInfo() or ProfessionsFrame.professionInfo)
+    if not professionInfo and C_TradeSkillUI and C_TradeSkillUI.GetBaseProfessionInfo then professionInfo = C_TradeSkillUI.GetBaseProfessionInfo() end
+    if type(professionInfo) ~= "table" then return nil, nil end
+    local professionName = professionInfo.parentProfessionName
+    local professionKey = professionName and SentinelMentor:GetProfessionKey(professionName)
+    if professionKey then return professionKey, professionName end
+    professionName = professionInfo.professionName
+    professionKey = professionName and SentinelMentor:GetProfessionKey(professionName)
+    if professionKey then return professionKey, professionName end
+    professionName = professionInfo.name
+    professionKey = professionName and SentinelMentor:GetProfessionKey(professionName)
+    if professionKey then return professionKey, professionName end
+    return nil, professionInfo.parentProfessionName or professionInfo.professionName or professionInfo.name
+end
+
+local PROFESSION_VIEW_SKILL = "skill"
+local PROFESSION_VIEW_RECIPES = "recipes"
+local PROFESSION_VIEW_TRAINERS = "trainers"
+local PROFESSION_SUB_VIEWS = {
+    {mode = PROFESSION_VIEW_SKILL, icon = "Interface\\Icons\\INV_Misc_Book_09", title = "LID_PROFESSION_FROMTRAINER", desc = "LID_PROFESSION_FROMTRAINER_DESC"},
+    {mode = PROFESSION_VIEW_RECIPES, icon = "Interface\\Icons\\INV_Scroll_03", title = "LID_PROFESSION_OTHERRECIPES", desc = "LID_PROFESSION_OTHERRECIPES_DESC"},
+    {mode = PROFESSION_VIEW_TRAINERS, icon = 134269, title = "LID_PROFESSION_FINDTRAINER", desc = "LID_PROFESSION_FINDTRAINER_DESC"},
+}
+local PROFESSION_ALL_VIEWS = PROFESSION_SUB_VIEWS
+PROFESSION_SUB_VIEWS = SentinelMentor:FilterTabViews(PROFESSION_ALL_VIEWS, "profession_")
+local professionViewMode = PROFESSION_SUB_VIEWS[1] and PROFESSION_SUB_VIEWS[1].mode or PROFESSION_VIEW_SKILL
+local function IsProfessionViewEnabled(mode)
+    return SentinelMentor:IsTabEnabled("profession_" .. mode)
+end
+function SentinelMentor:IsProfessionRecipeViewActive()
+    return professionViewMode == PROFESSION_VIEW_RECIPES
+end
+
+local function MarkProfessionEntries(groups, professionKey, isRecipe)
+    for _, groupName in ipairs({"available", "soon", "higher", "missingTalents", "ignored", "known"}) do
+        for _, entry in ipairs(groups[groupName]) do
+            entry.professionKey = professionKey
+            entry.isProfessionRecipe = isRecipe
+        end
+    end
+end
+
+local professionPicker = {}
+function professionPicker.GetOwned()
+    local owned = {}
+    if not GetProfessions or not GetProfessionInfo then return owned end
+    local professionIndices = {GetProfessions()}
+    for slot = 1, 10 do
+        local professionIndex = professionIndices[slot]
+        if professionIndex then
+            local professionName, icon, rank, maxRank = GetProfessionInfo(professionIndex)
+            local professionKey = professionName and SentinelMentor:GetProfessionKey(professionName)
+            if professionKey then table.insert(owned, {key = professionKey, name = professionName, icon = icon, rank = rank or 0, maxRank = maxRank or 0, owned = true}) end
+        end
+    end
+    return owned
+end
+
+function professionPicker.GetSources()
+    return {SentinelMentor_ProfessionData, SentinelMentor_RecipeData, SentinelMentorDB.trainers.profession}
+end
+
+function professionPicker.HasData(professionKey)
+    for _, source in ipairs(professionPicker.GetSources()) do
+        local data = source and source[professionKey]
+        if type(data) == "table" and next(data) then return true end
+    end
+    return false
+end
+
+function professionPicker.GetLists()
+    local owned = {}
+    local seen = {}
+    for _, info in ipairs(professionPicker.GetOwned()) do
+        seen[info.key] = true
+        if professionPicker.HasData(info.key) then table.insert(owned, info) end
+    end
+
+    local others = {}
+    for _, source in ipairs(professionPicker.GetSources()) do
+        for professionKey in pairs(source or {}) do
+            local professionName = SentinelMentor:GetProfessionName(professionKey)
+            if professionName and not seen[professionKey] and professionPicker.HasData(professionKey) then
+                seen[professionKey] = true
+                table.insert(others, {key = professionKey, name = professionName, icon = SentinelMentor:GetProfessionIcon(professionKey), rank = 0, maxRank = 0})
+            end
+        end
+    end
+
+    table.sort(others, function(a, b) return a.name < b.name end)
+    return owned, others
+end
+
+function professionPicker.GetInfo(professionKey)
+    for _, info in ipairs(professionPicker.GetOwned()) do
+        if info.key == professionKey then return info end
+    end
+    return {key = professionKey, name = SentinelMentor:GetProfessionName(professionKey) or professionKey, icon = SentinelMentor:GetProfessionIcon(professionKey), rank = 0, maxRank = 0}
+end
+
+function professionPicker.GetLabel(info)
+    local icon = info.icon and ("|T" .. info.icon .. ":16:16|t ") or ""
+    if info.owned then return icon .. info.name .. "  |cffaaaaaa" .. info.rank .. "/" .. info.maxRank .. "|r" end
+    return icon .. "|cff9d9d9d" .. info.name .. "|r"
+end
+
+function professionPicker.GetActive()
+    if not professionPicker.dropdown or not professionPicker.key then
+        local professionKey, skillLineName = GetOpenProfession()
+        return professionKey, skillLineName, GetCurrentProfessionSkill(skillLineName)
+    end
+
+    local info = professionPicker.GetInfo(professionPicker.key)
+    return info.key, info.name, info.rank
+end
+
+function professionPicker.UpdateWidth(dropdown, measure)
+    dropdown = dropdown or professionPicker.dropdown
+    measure = measure or professionPicker.measure
+    if not dropdown or not measure or not dropdown.Text then return end
+    local font, size, flags = dropdown.Text:GetFont()
+    if not font then return end
+    measure:SetFont(font, size, flags)
+    local widest = 0
+    for _, group in ipairs({professionPicker.GetLists()}) do
+        for _, info in ipairs(group) do
+            measure:SetText(professionPicker.GetLabel(info))
+            widest = math.max(widest, measure:GetUnboundedStringWidth())
+        end
+    end
+
+    dropdown:SetWidth(math.max(180, math.ceil(widest) + 50))
+end
+
+function professionPicker.UpdateText()
+    if professionPicker.dropdown and professionPicker.key then
+        local label = professionPicker.GetLabel(professionPicker.GetInfo(professionPicker.key))
+        professionPicker.dropdown:SetText(label)
+    end
+    professionPicker.UpdateWidth()
+    professionPicker.UpdateHeader()
+end
+
+function professionPicker.GetNativeHeader()
+    if not ProfessionsFrame or not ProfessionsFrame.GetTitleText or not ProfessionsFrame.GetPortrait then return nil, nil end
+    return ProfessionsFrame:GetTitleText(), ProfessionsFrame:GetPortrait()
+end
+
+function professionPicker.SetHeaderActive(active)
+    local nativeTitle, nativePortrait = professionPicker.GetNativeHeader()
+    if not nativeTitle or not nativePortrait then return end
+    local header = professionPicker.header
+    if not header then
+        if not active then return end
+        local titleContainer = ProfessionsFrame.TitleContainer
+        local portraitContainer = ProfessionsFrame.PortraitContainer
+        header = SentinelMentor.CreateDetachedFrame("Frame", ProfessionsFrame)
+        header:SetAllPoints(ProfessionsFrame)
+        header:SetFrameLevel((titleContainer or ProfessionsFrame):GetFrameLevel() + 5)
+        header.portraitFrame = SentinelMentor.CreateDetachedFrame("Frame", ProfessionsFrame)
+        header.portraitFrame:SetAllPoints(nativePortrait)
+        header.portraitFrame:SetFrameLevel((portraitContainer or ProfessionsFrame):GetFrameLevel() + 1)
+        header.portrait = header.portraitFrame:CreateTexture(nil, "ARTWORK")
+        header.portrait:SetAllPoints(header.portraitFrame)
+        header.portraitMask = header.portraitFrame:CreateMaskTexture()
+        header.portraitMask:SetPoint("TOPLEFT", header.portrait, "TOPLEFT", 2, 0)
+        header.portraitMask:SetPoint("BOTTOMRIGHT", header.portrait, "BOTTOMRIGHT", -2, 4)
+        header.portraitMask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        header.portrait:AddMaskTexture(header.portraitMask)
+        header.title = header:CreateFontString(nil, "OVERLAY")
+        header.title:SetFontObject(nativeTitle:GetFontObject() or GameFontNormal)
+        header.title:SetWordWrap(false)
+        if titleContainer then
+            header.title:SetPoint("TOPLEFT", titleContainer, "TOPLEFT", 0, -5)
+            header.title:SetPoint("TOPRIGHT", titleContainer, "TOPRIGHT", 0, -5)
+        else
+            header.title:SetPoint("TOPLEFT", ProfessionsFrame, "TOPLEFT", 58, -6)
+            header.title:SetPoint("TOPRIGHT", ProfessionsFrame, "TOPRIGHT", -24, -6)
+        end
+        professionPicker.header = header
+    end
+
+    professionPicker.headerActive = active
+    nativeTitle:SetAlpha(active and 0 or 1)
+    nativePortrait:SetAlpha(active and 0 or 1)
+    header:SetShown(active)
+    header.portraitFrame:SetShown(active)
+    if active then professionPicker.UpdateHeader() end
+end
+
+function professionPicker.UpdateHeader()
+    local header = professionPicker.header
+    if not header or not professionPicker.headerActive or not professionPicker.key then return end
+    local info = professionPicker.GetInfo(professionPicker.key)
+    header.title:SetText(TRADE_SKILL_TITLE and TRADE_SKILL_TITLE:format(info.name) or info.name)
+    header.portrait:SetTexture(info.icon or SentinelMentor:GetProfessionIcon(info.key))
+end
+
+function professionPicker.Reset()
+    local openKey = GetOpenProfession()
+    local owned = professionPicker.GetLists()
+    professionPicker.key = openKey or (owned[1] and owned[1].key)
+    professionPicker.UpdateText()
+end
+
+function professionPicker.Select(professionKey)
+    professionPicker.key = professionKey
+    SentinelMentor_ProfessionRefresh()
+end
+
+function professionPicker.Create()
+    if professionPicker.dropdown then return end
+    local dropdown = SentinelMentor.Style:Dropdown(professionFrame, 180)
+    _G["SentinelMentorProfessionPicker"] = dropdown
+    professionPicker.menuGenerator = function(_, rootDescription)
+        for groupIndex, group in ipairs({professionPicker.GetLists()}) do
+            if #group > 0 then
+                rootDescription:CreateTitle(SentinelMentor:Trans(groupIndex == 1 and "LID_YOURPROFESSIONS" or "LID_OTHERPROFESSIONS"))
+                for _, info in ipairs(group) do
+                    local professionKey = info.key
+                    rootDescription:CreateRadio(professionPicker.GetLabel(info), function() return professionPicker.key == professionKey end, function() professionPicker.Select(professionKey) end)
+                end
+            end
+        end
+    end
+
+    dropdown:SetupMenu(professionPicker.menuGenerator)
+    professionPicker.dropdown = dropdown
+    professionPicker.measure = dropdown:CreateFontString(nil, "ARTWORK")
+    professionPicker.measure:SetPoint("TOPLEFT")
+    professionPicker.measure:SetAlpha(0)
+end
+
+function professionPicker.SelectNext()
+    local owned, others = professionPicker.GetLists()
+    local keys = {}
+    for _, info in ipairs(owned) do table.insert(keys, info.key) end
+    for _, info in ipairs(others) do table.insert(keys, info.key) end
+    if #keys == 0 then return end
+    local current = professionPicker.GetActive()
+    local nextIndex = 1
+    for index, key in ipairs(keys) do
+        if key == current then nextIndex = index % #keys + 1 end
+    end
+
+    professionPicker.Select(keys[nextIndex])
+end
+
+function professionPicker.ApplyInputMode()
+    local dropdown = professionPicker.dropdown
+    if not dropdown then return end
+    dropdown:Show()
+    if SentinelMentor.IsGamepadNavActive() then
+        dropdown:ClearMenuState()
+        dropdown:SetScript("OnMouseDown", professionPicker.SelectNext)
+    else
+        dropdown:SetScript("OnMouseDown", nil)
+        dropdown:SetupMenu(professionPicker.menuGenerator)
+    end
+
+    professionPicker.UpdateText()
+end
+
+function professionPicker.GetRankRange(rank)
+    return rank == 1 and 1 or rank * 75 - 100, rank * 75
+end
+
+function professionPicker.GetRankTrainers(trainers, minRank, exactRank)
+    local result = {}
+    for _, trainer in ipairs(trainers) do
+        if (exactRank and trainer.rank == exactRank) or (not exactRank and trainer.rank >= minRank) then table.insert(result, trainer) end
+    end
+    return result
+end
+
+function professionPicker.GetNearestTrainer(trainers, rank)
+    return SentinelMentor.TrainerLocations.FindNearest(SentinelMentor:GetTrainerLocationEntries(professionPicker.GetRankTrainers(trainers, rank), "", true))
+end
+
+function professionPicker.AddTrainerItems(items, professionKey, trainers, searchText)
+    local maxRank = 0
+    for _, trainer in ipairs(trainers) do maxRank = math.max(maxRank, trainer.rank or 1) end
+    local professionIcon = SentinelMentor:GetProfessionIcon(professionKey)
+    for rank = 1, maxRank do
+        local entries = SentinelMentor:GetTrainerLocationEntries(professionPicker.GetRankTrainers(trainers, rank, rank), searchText)
+        if #entries > 0 then
+            local rankName = SentinelMentor:Trans("LID_PROFRANK_" .. rank)
+            local minSkill, maxSkill = professionPicker.GetRankRange(rank)
+            local groupPrefix = "profession_trainer_" .. professionKey .. "_rank" .. rank .. "_"
+            SentinelMentor:AddHeaderItem(items, SentinelMentor:Trans("LID_PROFTRAINER_RANKHEADER"):format(rankName, minSkill, maxSkill), "|cffffd100", nil, groupPrefix .. "group")
+            if not SentinelMentor:IsGroupCollapsed(groupPrefix .. "group") then
+                table.insert(items, {isNearestTrainer = true, rowDepth = 1, rank = rank, rankName = rankName, icon = professionIcon, nearest = professionPicker.GetNearestTrainer(trainers, rank), findNearest = function() return professionPicker.GetNearestTrainer(trainers, rank) end})
+                for _, entry in ipairs(entries) do
+                    if not entry.displayID then entry.icon = professionIcon end
+                end
+                SentinelMentor:AddTrainerLocationItems(items, entries, groupPrefix, 1)
+            end
+        end
+    end
+    professionPicker.AddSpecTrainerItems(items, professionKey, searchText, professionIcon)
+end
+
+function professionPicker.GetSpecName(spec)
+    for _, spellID in ipairs(spec.spells) do
+        local spellInfo = C_Spell.GetSpellInfo(spellID)
+        if spellInfo and spellInfo.name and spellInfo.name ~= "" then return spellInfo.name end
+    end
+    return spec.name
+end
+
+function professionPicker.AddSpecTrainerItems(items, professionKey, searchText, professionIcon)
+    local specs = SentinelMentorDB.trainers.spec and SentinelMentorDB.trainers.spec[professionKey]
+    if not specs then return end
+    for _, spec in ipairs(specs) do
+        local entries = SentinelMentor:GetTrainerLocationEntries(spec.trainers, searchText)
+        if #entries > 0 then
+            local specName = professionPicker.GetSpecName(spec)
+            local groupPrefix = "profession_trainer_" .. professionKey .. "_spec" .. spec.spells[1] .. "_"
+            SentinelMentor:AddHeaderItem(items, SentinelMentor:Trans("LID_PROFTRAINER_SPECHEADER"):format(specName), "|cffff8000", nil, groupPrefix .. "group")
+            if not SentinelMentor:IsGroupCollapsed(groupPrefix .. "group") then
+                local function FindNearest()
+                    return SentinelMentor.TrainerLocations.FindNearest(SentinelMentor:GetTrainerLocationEntries(spec.trainers, "", true))
+                end
+                table.insert(items, {isNearestTrainer = true, rowDepth = 1, rankName = specName, icon = professionIcon, nearest = FindNearest(), findNearest = FindNearest})
+                for _, entry in ipairs(entries) do
+                    if not entry.displayID then entry.icon = professionIcon end
+                end
+                SentinelMentor:AddTrainerLocationItems(items, entries, groupPrefix, 1)
+            end
+        end
+    end
+end
+
+SentinelMentor.TrainerLocations.AddResolveListener(function()
+    if professionFrame:IsVisible() and professionViewMode == PROFESSION_VIEW_TRAINERS then SentinelMentor_ProfessionRefresh() end
+end)
+
+function SentinelMentor:BuildProfessionViewItems(viewMode, searchText, professionKey, skillLineName, currentSkill)
+    searchText = (searchText or ""):lower()
+    local items = {}
+    if viewMode == PROFESSION_VIEW_RECIPES then
+        local data = professionKey and SentinelMentor_RecipeData and SentinelMentor_RecipeData[professionKey]
+        if data and next(data) then
+            local groups = SentinelMentor:ClassifyEntries(data, searchText, currentSkill, true, professionKey)
+            MarkProfessionEntries(groups, professionKey, true)
+            SentinelMentor:AppendGroupItems(items, groups, "tradeskillrecipe_", nil, SentinelMentor:Trans("LID_SKILL"), nil, nil, "skill")
+        end
+
+        if #items == 0 then SentinelMentor:AddHeaderItem(items, skillLineName and SentinelMentor:Trans("LID_NORECIPEDATAFOR"):format(skillLineName) or SentinelMentor:Trans("LID_NOPROFESSIONDETECTED"), "|cffaaaaaa") end
+    elseif viewMode == PROFESSION_VIEW_TRAINERS then
+        local trainers = professionKey and SentinelMentorDB.trainers.profession and SentinelMentorDB.trainers.profession[professionKey]
+        if trainers then professionPicker.AddTrainerItems(items, professionKey, trainers, searchText) end
+        if #items == 0 then SentinelMentor:AddHeaderItem(items, skillLineName and SentinelMentor:Trans("LID_NOTRAINERDATAFOR"):format(skillLineName) or SentinelMentor:Trans("LID_NOPROFESSIONDETECTED"), "|cffaaaaaa") end
+    else
+        local data = professionKey and SentinelMentor_ProfessionData and SentinelMentor_ProfessionData[professionKey]
+        if data and next(data) then
+            local groups = SentinelMentor:ClassifyEntries(data, searchText, currentSkill, true, professionKey)
+            MarkProfessionEntries(groups, professionKey, false)
+            SentinelMentor:AppendGroupItems(items, groups, "tradeskillprofession_", nil, SentinelMentor:Trans("LID_SKILL"), nil, nil, "skill")
+        end
+
+        if #items == 0 then SentinelMentor:AddHeaderItem(items, skillLineName and SentinelMentor:Trans("LID_NODATAFOR"):format(skillLineName) or SentinelMentor:Trans("LID_NOPROFESSIONDETECTED"), "|cffaaaaaa") end
+    end
+
+    SentinelMentor:AddCostColumn(items)
+    return items
+end
+
+function SentinelMentor_ProfessionRefresh()
+    local key, name, rank = professionPicker.GetActive()
+    professionScrollBox:SetDataProvider(CreateDataProvider(SentinelMentor:CompactItems(SentinelMentor:BuildProfessionViewItems(professionViewMode, SentinelMentor_ProfessionSearchText, key, name, rank))), ScrollBoxConstants.RetainScrollPosition)
+    if SentinelMentor.CompendiumProfessionView then SentinelMentor.CompendiumProfessionView:Refresh() end
+    professionPicker.UpdateText()
+end
+
+local professionSubTabs = {}
+function professionSubTabs.GetSavedView()
+    local saved = SentinelMentor_Character and SentinelMentor_Character.professionView
+    for _, view in ipairs(PROFESSION_SUB_VIEWS) do
+        if view.mode == saved then return saved end
+    end
+    return PROFESSION_SUB_VIEWS[1] and PROFESSION_SUB_VIEWS[1].mode or PROFESSION_VIEW_SKILL
+end
+
+function professionSubTabs.Update()
+    if not professionSubTabs.bar then return end
+    for index, view in ipairs(PROFESSION_ALL_VIEWS) do
+        if view.mode == professionViewMode then
+            professionSubTabs.bar:SetTabVisuallySelected(index)
+            professionSubTabs.title:SetText(SentinelMentor:Trans(view.title))
+            professionSubTabs.desc:SetText(SentinelMentor:Trans(view.desc))
+        end
+    end
+end
+
+function professionSubTabs.Select(mode)
+    professionViewMode = mode
+    if SentinelMentor_Character then SentinelMentor_Character.professionView = mode end
+    professionSubTabs.Update()
+    if professionSubTabs.UpdateModeTabs then professionSubTabs.UpdateModeTabs() end
+    if professionFrame.compendiumHost then SentinelMentor:PositionCompendiumProfessions() end
+    SentinelMentor_ProfessionRefresh()
+end
+
+function professionSubTabs.Create()
+    if professionSubTabs.bar then return end
+    local bar = CreateFrame("Frame", "SentinelMentorProfessionSubTabs", professionFrame, "TabSystemTemplate")
+    professionSubTabs.bar = bar
+    bar:SetTabSelectedCallback(function(tabID)
+        local view = PROFESSION_ALL_VIEWS[tabID]
+        if view then professionSubTabs.Select(view.mode) end
+        return true
+    end)
+
+    for index, view in ipairs(PROFESSION_ALL_VIEWS) do
+        bar:AddTab(nil, view.icon)
+        bar:GetTabButton(index):SetTooltipText(SentinelMentor:Trans(view.title) .. "\n|cffffffff" .. SentinelMentor:Trans(view.desc) .. "|r")
+        bar:SetTabShown(index, IsProfessionViewEnabled(view.mode))
+    end
+
+    bar:Layout()
+    local panel = CreateFrame("Frame", nil, professionFrame)
+    SentinelMentor:AddContentBorder(panel, professionFrame)
+    professionSubTabs.panel = panel
+    local title = professionFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    title:SetJustifyH("LEFT")
+    title:SetWordWrap(false)
+    professionSubTabs.title = title
+    local desc = professionFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    desc:SetJustifyH("LEFT")
+    desc:SetWordWrap(false)
+    desc:SetTextColor(0.75, 0.75, 0.75)
+    professionSubTabs.desc = desc
+    professionSubTabs.spoilerFree = SentinelMentor:CreateSpoilerFreeCheckbox(professionFrame, "professionSpoilerFree", "LID_PROFSPOILERFREE_DESC", SentinelMentor_ProfessionRefresh)
+    professionSubTabs.Update()
+end
+
+function professionSubTabs.InstallGamepadFocus()
+    if not IsKeyDown then return end
+    local driver = CreateFrame("Frame", nil, professionFrame)
+    local focused, gamepadState, scrolledTo
+    local function SetFocused(current)
+        if current == focused then return end
+        if focused and focused.smOnLeave then focused.smOnLeave(focused) end
+        focused = current
+        if focused and focused.smOnEnter then focused.smOnEnter(focused) end
+    end
+
+    driver:SetScript("OnShow", function()
+        gamepadState = SentinelMentor.IsGamepadNavActive()
+        SentinelMentor:PrepareGamepadNavigation(professionFrame, gamepadState)
+    end)
+
+    driver:SetScript("OnHide", function()
+        scrolledTo = nil
+        SetFocused(nil)
+    end)
+
+    driver:SetScript("OnUpdate", function()
+        local gamepad = SentinelMentor.IsGamepadNavActive()
+        if gamepad ~= gamepadState then
+            gamepadState = gamepad
+            SentinelMentor:PrepareGamepadNavigation(professionFrame, gamepad)
+            if professionPicker.dropdown and professionPicker.dropdown:IsShown() then professionPicker.ApplyInputMode() end
+            SentinelMentor_ProfessionRefresh()
+        end
+
+        local current = gamepad and SmartNavigation:GetCurrentButton() or nil
+        if current ~= scrolledTo then
+            scrolledTo = current
+            local row = current and current.smRow
+            if row and row.GetElementData and row:GetParent() == professionScrollBox:GetScrollTarget() then professionScrollBox:ScrollToElementData(row:GetElementData(), ScrollBoxConstants.AlignNearest) end
+        end
+
+        SetFocused(current and current.smFocusStripped and current or nil)
+    end)
+end
+
+professionSubTabs.InstallGamepadFocus()
+function professionSubTabs.PrewarmRows()
+    if professionFrame.compendiumHost or professionFrame:IsShown() then return end
+    SentinelMentor.RunDetached(professionFrame, function()
+        local rowHeight = SentinelMentor.ProfessionRowHeight
+        SentinelMentor.ProfessionRowHeight = SentinelMentor.MinRowHeight
+        professionScrollBox:ClearAllPoints()
+        professionScrollBox:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+        professionScrollBox:SetSize(420, 1200)
+        local items = {}
+        for index = 1, math.ceil(1200 / SentinelMentor.MinRowHeight) + 2 do
+            items[index] = {
+                entry = {
+                    name = ""
+                }
+            }
+        end
+
+        professionFrame:Show()
+        professionScrollBox:SetDataProvider(CreateDataProvider(SentinelMentor:CompactItems(items)))
+        professionFrame:Hide()
+        professionScrollBox:RemoveDataProvider()
+        SentinelMentor.ProfessionRowHeight = rowHeight
+        professionScrollBox:ClearAllPoints()
+        professionScrollBox:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", 8, -4)
+        professionScrollBox:SetPoint("BOTTOMRIGHT", professionFrame, "BOTTOMRIGHT", -26, 12)
+    end)
+end
+
+function SentinelMentor:PositionCompendiumProfessions()
+    local host = professionFrame.compendiumHost
+    if not host then return end
+    local panel = professionSubTabs.panel
+    professionFrame:ClearAllPoints()
+    professionFrame:SetAllPoints(host)
+    panel:ClearAllPoints()
+    panel:SetAllPoints(host)
+    professionSubTabs.bar:Hide()
+    professionSubTabs.spoilerFree:Hide()
+    professionSubTabs.title:ClearAllPoints()
+    professionSubTabs.title:SetPoint("BOTTOMLEFT", host.professionTabs[#host.professionTabs], "BOTTOMRIGHT", 12, 17)
+    professionSubTabs.title:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", -180, 17)
+    professionSubTabs.desc:ClearAllPoints()
+    professionSubTabs.desc:SetPoint("TOPLEFT", professionSubTabs.title, "BOTTOMLEFT", 0, -3)
+    professionSubTabs.desc:SetPoint("TOPRIGHT", professionSubTabs.title, "BOTTOMRIGHT", 0, -3)
+    professionSubTabs.title:Show()
+    professionSubTabs.desc:Show()
+    for index, tab in ipairs(host.professionTabs) do
+        tab:SetTabSelected(tab.mode == professionViewMode)
+        AzerothCompendiumAPI.PositionContentTab(tab, host, host.professionTabs[index - 1])
+    end
+    if professionPicker.dropdown then
+        professionPicker.dropdown:ClearAllPoints()
+        professionPicker.dropdown:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", 0, 2)
+    end
+    professionSearchBox:Hide()
+    professionScrollBox:ClearAllPoints()
+    professionScrollBox:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -4)
+    professionScrollBox:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -20, 0)
+    professionScrollBar:ClearAllPoints()
+    professionScrollBar:SetPoint("TOPLEFT", panel, "TOPRIGHT", -16, -6)
+    professionScrollBar:SetPoint("BOTTOMLEFT", panel, "BOTTOMRIGHT", -16, 8)
+    panel.borderFrame:SetFrameLevel(professionScrollBox:GetFrameLevel() + 20)
+    professionScrollBar:SetFrameLevel(panel.borderFrame:GetFrameLevel() + 1)
+    panel:Show()
+end
+
+local tradeSkillViewBar = {buttons = {}}
+local function PlaceTradeSkillList(x, y)
+    local barOffset = tradeSkillViewBar.Update and tradeSkillViewBar.Update(x, y) or 0
+    professionScrollBox:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", x, y + barOffset)
+end
+
+local function PositionProfessionFrame()
+    if professionFrame.compendiumHost then SentinelMentor:PositionCompendiumProfessions(); return end
+    if tradeSkillViewBar.frame then tradeSkillViewBar.frame:Hide() end
+    professionFrame:ClearAllPoints()
+    if professionFrame.compendiumHost then
+        professionFrame:SetScale(1)
+        professionFrame:SetAllPoints(professionFrame.compendiumHost)
+    elseif ProfessionsFrame and ProfessionsFrame:IsShown() then
+        professionFrame:SetScale(1)
+        professionFrame:SetPoint("TOPLEFT", ProfessionsFrame, "TOPLEFT", 3, -21)
+        professionFrame:SetPoint("BOTTOMRIGHT", ProfessionsFrame, "BOTTOMRIGHT", -3, 3)
+    elseif TradeSkillFrame and TradeSkillFrame:IsShown() then
+        if SentinelMentor:IsDragonflightUIEnabled() and DragonflightUIProfessionFrame and DragonflightUIProfessionFrame:IsShown() then
+            professionFrame:SetScale(DragonflightUIProfessionFrame:GetScale())
+            professionFrame:SetPoint("TOPLEFT", DragonflightUIProfessionFrame, "TOPLEFT", -4, -24)
+            professionFrame:SetPoint("BOTTOMRIGHT", DragonflightUIProfessionFrame, "BOTTOMRIGHT", -4, 4)
+        elseif SentinelMentor:IsLeatrixWideProfessionEnabled() then
+            professionFrame:SetScale(TradeSkillFrame:GetScale())
+            professionFrame:SetPoint("TOPLEFT", TradeSkillFrame, "TOPLEFT", 14, -70)
+            professionFrame:SetPoint("BOTTOMRIGHT", TradeSkillFrame, "BOTTOMRIGHT", -36, 70)
+        else
+            professionFrame:SetScale(TradeSkillFrame:GetScale())
+            professionFrame:SetPoint("TOPLEFT", TradeSkillFrame, "TOPLEFT", 14, -70)
+            professionFrame:SetPoint("BOTTOMRIGHT", TradeSkillFrame, "BOTTOMRIGHT", -36, 70)
+        end
+    else
+        professionFrame:SetScale(1)
+        professionFrame:SetPoint("CENTER")
+    end
+
+    professionSearchBox:ClearAllPoints()
+    professionScrollBox:ClearAllPoints()
+    if professionFrame.compendiumHost or (ProfessionsFrame and ProfessionsFrame:IsShown()) then
+        local panel = professionSubTabs.panel
+        if panel then
+            local tabsLayout = not professionFrame.compendiumHost and SentinelMentor:GetTabLayout("professionLayout") == "tabs"
+            panel:Show()
+            professionSubTabs.bar:SetShown(not tabsLayout)
+            professionSubTabs.title:Show()
+            professionSubTabs.desc:Show()
+            panel:ClearAllPoints()
+            panel:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", 8, -52)
+            panel:SetPoint("BOTTOMRIGHT", professionFrame, "BOTTOMRIGHT", -8, 8)
+            professionSubTabs.bar:ClearAllPoints()
+            professionSubTabs.bar:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 56, -2)
+            professionSubTabs.title:ClearAllPoints()
+            professionSubTabs.title:SetPoint("TOPLEFT", professionSubTabs.bar, tabsLayout and "TOPLEFT" or "TOPRIGHT", tabsLayout and 0 or 12, 6)
+            if professionPicker.dropdown then
+                professionPicker.dropdown:ClearAllPoints()
+                professionPicker.dropdown:SetPoint("BOTTOMRIGHT", panel, "TOPRIGHT", -2, 9)
+                professionSubTabs.title:SetPoint("TOPRIGHT", professionPicker.dropdown, "TOPLEFT", -12, 1)
+            else
+                professionSubTabs.title:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -2, 36)
+            end
+            professionSubTabs.desc:ClearAllPoints()
+            professionSubTabs.desc:SetPoint("TOPLEFT", professionSubTabs.title, "BOTTOMLEFT", 0, -3)
+            professionSubTabs.desc:SetPoint("TOPRIGHT", professionSubTabs.title, "BOTTOMRIGHT", 0, -3)
+            professionSearchBox:SetPoint("TOPLEFT", panel, "TOPLEFT", 14, -8)
+            professionSearchBox:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -300, -8)
+            local spoilerFree = professionSubTabs.spoilerFree
+            spoilerFree:ClearAllPoints()
+            spoilerFree:SetPoint("LEFT", professionSearchBox, "RIGHT", 10, 0)
+            spoilerFree:SetChecked(SentinelMentor_Character.professionSpoilerFree and true or false)
+            spoilerFree:Show()
+            professionScrollBox:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -34)
+            professionScrollBox:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -20, 0)
+            professionScrollBar:ClearAllPoints()
+            professionScrollBar:SetPoint("TOPLEFT", panel, "TOPRIGHT", -16, -36)
+            professionScrollBar:SetPoint("BOTTOMLEFT", panel, "BOTTOMRIGHT", -16, 8)
+            panel.borderFrame:SetFrameLevel(professionScrollBox:GetFrameLevel() + 20)
+            professionScrollBar:SetFrameLevel(panel.borderFrame:GetFrameLevel() + 1)
+            if professionFrame.compendiumHost then
+                professionSearchBox:Hide()
+                spoilerFree:Hide()
+                professionScrollBox:ClearAllPoints()
+                professionScrollBox:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -4)
+                professionScrollBox:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -20, 0)
+                professionScrollBar:ClearAllPoints()
+                professionScrollBar:SetPoint("TOPLEFT", panel, "TOPRIGHT", -16, -6)
+                professionScrollBar:SetPoint("BOTTOMLEFT", panel, "BOTTOMRIGHT", -16, 8)
+            end
+        else
+            professionSearchBox:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", 64, -6)
+            professionSearchBox:SetPoint("TOPRIGHT", professionFrame, "TOPRIGHT", -10, -6)
+            professionScrollBox:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", 8, -54)
+            professionScrollBox:SetPoint("BOTTOMRIGHT", professionFrame, "BOTTOMRIGHT", -26, 12)
+        end
+    elseif SentinelMentor:IsDragonflightUIEnabled() and DragonflightUIProfessionFrame and DragonflightUIProfessionFrame:IsShown() then
+        professionSearchBox:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", 80, 0)
+        professionSearchBox:SetPoint("TOPRIGHT", professionFrame, "TOPRIGHT", -10, 0)
+        PlaceTradeSkillList(8, -64)
+        professionScrollBox:SetPoint("BOTTOMRIGHT", professionFrame, "BOTTOMRIGHT", -26, 12)
+    elseif SentinelMentor:IsLeatrixWideProfessionEnabled() then
+        local titleText = TradeSkillFrame and _G["TradeSkillFrameTitleText"]
+        if titleText and professionFrame:GetTop() and titleText:GetBottom() then
+            local topOffset = titleText:GetBottom() - professionFrame:GetTop() - 4
+            professionSearchBox:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", 66, topOffset)
+            professionSearchBox:SetPoint("TOPRIGHT", professionFrame, "TOPRIGHT", -4, topOffset)
+        else
+            professionSearchBox:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", 10, -6)
+            professionSearchBox:SetPoint("TOPRIGHT", professionFrame, "TOPRIGHT", -30, -10)
+        end
+
+        PlaceTradeSkillList(0, -4)
+        professionScrollBox:SetPoint("BOTTOMRIGHT", professionFrame, "BOTTOMRIGHT", -26, -12)
+    else
+        local titleText = TradeSkillFrame and _G["TradeSkillFrameTitleText"]
+        if titleText and professionFrame:GetTop() and titleText:GetBottom() then
+            local topOffset = titleText:GetBottom() - professionFrame:GetTop() - 4
+            professionSearchBox:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", 66, topOffset)
+            professionSearchBox:SetPoint("TOPRIGHT", professionFrame, "TOPRIGHT", -4, topOffset)
+        else
+            professionSearchBox:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", 10, -6)
+            professionSearchBox:SetPoint("TOPRIGHT", professionFrame, "TOPRIGHT", -30, -6)
+        end
+
+        PlaceTradeSkillList(8, -4)
+        professionScrollBox:SetPoint("BOTTOMRIGHT", professionFrame, "BOTTOMRIGHT", -26, 12)
+    end
+end
+
+if TradeSkillFrame then hooksecurefunc(TradeSkillFrame, "SetScale", function() if classFrame:IsShown() then PositionProfessionFrame() end end) end
+local function CreateTradeSkillTab(name, icon)
+    local tab = CreateFrame("Button", name, UIParent, "BackdropTemplate")
+    tab:SetSize(32, 32)
+    SentinelMentor.Style:Template(tab, "raised")
+    tab:SetNormalTexture(icon)
+    local nt = tab:GetNormalTexture()
+    if nt then nt:ClearAllPoints(); nt:SetPoint("CENTER"); nt:SetSize(24, 24); nt:SetTexCoord(0.06, 0.94, 0.06, 0.94) end
+    tab:SetHighlightTexture(SentinelMentor.Style.tex.blank, "ADD")
+    tab:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.1)
+    tab:SetFrameStrata("HIGH")
+    tab:SetFrameLevel(500)
+    tab:Hide()
+    local border = tab:CreateTexture(name .. "Border", "BACKGROUND")
+    local glow = tab:CreateTexture(nil, "OVERLAY")
+    glow:SetSize(34, 34)
+    glow:SetPoint("CENTER", tab, "CENTER", 0, 0)
+    glow:SetTexture(SentinelMentor.Style.tex.blank)
+    local ac = SentinelMentor.Style.colors.accent
+    glow:SetVertexColor(ac.r, ac.g, ac.b, 0.35)
+    glow:Hide()
+    return tab, glow
+end
+
+local nativeTab, nativeTabGlow = CreateTradeSkillTab("SentinelMentorTradeSkillNativeTab", "Interface\\Icons\\ability_kick")
+local professionTab, professionTabGlow = CreateTradeSkillTab("SentinelMentorTradeSkillProfessionTab", "Interface\\Icons\\INV_Misc_Book_09")
+local recipeTab, recipeTabGlow = CreateTradeSkillTab("SentinelMentorTradeSkillRecipeTab", "Interface\\Icons\\INV_Scroll_03")
+local function PositionTradeSkillTabs()
+    C_Timer.After(SentinelMentor:IsDragonflightUIEnabled() and 0.1 or 0, function()
+        if SentinelMentor:IsDragonflightUIEnabled() and DragonflightUIProfessionFrame and DragonflightUIProfessionFrame:IsShown() then
+            local scale = DragonflightUIProfessionFrame:GetScale()
+            nativeTab:SetScale(scale)
+            professionTab:SetScale(scale)
+            recipeTab:SetScale(scale)
+            nativeTab:ClearAllPoints()
+            nativeTab:SetPoint("TOPLEFT", DragonflightUIProfessionFrame, "TOPRIGHT", 0, -60)
+            professionTab:ClearAllPoints()
+            professionTab:SetPoint("TOPLEFT", nativeTab, "BOTTOMLEFT", 0, -36)
+            recipeTab:ClearAllPoints()
+            recipeTab:SetPoint("TOPLEFT", SentinelMentor:IsTabEnabled("profession_skill") and professionTab or nativeTab, "BOTTOMLEFT", 0, -36)
+        else
+            if TradeSkillFrame then
+                local scale = TradeSkillFrame:GetScale()
+                nativeTab:SetScale(scale)
+                professionTab:SetScale(scale)
+                recipeTab:SetScale(scale)
+                nativeTab:ClearAllPoints()
+                nativeTab:SetPoint("TOPLEFT", TradeSkillFrame, "TOPRIGHT", -33, -60)
+                professionTab:ClearAllPoints()
+                professionTab:SetPoint("TOPLEFT", nativeTab, "BOTTOMLEFT", 0, -36)
+                recipeTab:ClearAllPoints()
+                recipeTab:SetPoint("TOPLEFT", SentinelMentor:IsTabEnabled("profession_skill") and professionTab or nativeTab, "BOTTOMLEFT", 0, -36)
+            end
+        end
+    end)
+end
+
+local NATIVE_TRADESKILL_WIDGETS = {"TradeSkillSubClassDropdown", "TradeSkillInvSlotDropdown", "TradeSkillRankFrame", "TradeSkillRankFrameBorder"}
+local function HideNativeTradeSkillWidgets()
+    for _, name in ipairs(NATIVE_TRADESKILL_WIDGETS) do
+        local widget = _G[name]
+        if widget then widget:Hide() end
+    end
+end
+
+local function ShowNativeTradeSkillWidgets()
+    for _, name in ipairs(NATIVE_TRADESKILL_WIDGETS) do
+        local widget = _G[name]
+        if widget then widget:Show() end
+    end
+end
+
+local TRADESKILL_VIEWS = {PROFESSION_VIEW_SKILL, PROFESSION_VIEW_RECIPES}
+local function IsTradeSkillCombined()
+    return SentinelMentor:GetTabLayout("professionLayout") ~= "tabs"
+end
+
+local function EnabledTradeSkillViews()
+    local views = {}
+    for _, mode in ipairs(TRADESKILL_VIEWS) do
+        if IsProfessionViewEnabled(mode) then table.insert(views, mode) end
+    end
+    return views
+end
+
+local function ResolveTradeSkillView(mode)
+    if not IsTradeSkillCombined() then return mode end
+    if (professionViewMode == PROFESSION_VIEW_SKILL or professionViewMode == PROFESSION_VIEW_RECIPES) and IsProfessionViewEnabled(professionViewMode) then return professionViewMode end
+    return EnabledTradeSkillViews()[1] or mode
+end
+
+local function UpdateTradeSkillTabs()
+    local enabled = SentinelMentor:IsTabEnabled("professions") and #EnabledTradeSkillViews() > 0
+    local combined = IsTradeSkillCombined()
+    nativeTab:SetShown(enabled)
+    professionTab:SetShown(enabled and (combined or IsProfessionViewEnabled(PROFESSION_VIEW_SKILL)))
+    recipeTab:SetShown(enabled and not combined and IsProfessionViewEnabled(PROFESSION_VIEW_RECIPES))
+end
+
+local function SetTradeSkillView(mode)
+    if professionFrame.compendiumHost then SentinelMentor:UndockCompendiumFrame(professionFrame) end
+    if mode == PROFESSION_VIEW_SKILL or mode == PROFESSION_VIEW_RECIPES then
+        professionViewMode = mode
+        C_Timer.After(SentinelMentor:IsDragonflightUIEnabled() and 0.1 or 0, function()
+            if professionFrame.compendiumHost then ShowNativeTradeSkillWidgets(); return end
+            if SentinelMentor:IsDragonflightUIEnabled() and DragonflightUIProfessionFrame and DragonflightUIProfessionFrame:IsShown() then
+                professionListBg:ClearAllPoints()
+                professionListBg:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", 4, -32)
+                professionListBg:SetPoint("BOTTOMRIGHT", professionFrame, "BOTTOMRIGHT", 4, -2)
+                professionListBg:SetColorTexture(0, 0, 0, 1)
+                if DragonflightUIProfessionRankFrame then DragonflightUIProfessionRankFrame:Hide() end
+            elseif SentinelMentor:IsLeatrixWideProfessionEnabled() then
+                professionListBg:ClearAllPoints()
+                professionListBg:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", 0, -2)
+                professionListBg:SetPoint("BOTTOMRIGHT", professionFrame, "BOTTOMRIGHT", -2, -16)
+                professionListBg:SetColorTexture(0, 0, 0, 1)
+            else
+                professionListBg:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", 4, -2)
+                SentinelMentor.Style:ApplyBookBackground(professionListBg)
+                if TradeSkillFrameAvailableFilterCheckButton then TradeSkillFrameAvailableFilterCheckButton:Hide() end
+                if TradeSearchInputBox then TradeSearchInputBox:Hide() end
+            end
+
+            PositionProfessionFrame()
+            professionFrame:Show()
+            nativeTabGlow:Hide()
+            if IsTradeSkillCombined() then
+                professionTabGlow:Show()
+                recipeTabGlow:Hide()
+            elseif mode == PROFESSION_VIEW_RECIPES then
+                recipeTabGlow:Show()
+                professionTabGlow:Hide()
+            else
+                professionTabGlow:Show()
+                recipeTabGlow:Hide()
+            end
+
+            HideNativeTradeSkillWidgets()
+            SentinelMentor_ProfessionRefresh()
+        end)
+    else
+        professionFrame:Hide()
+        professionTabGlow:Hide()
+        recipeTabGlow:Hide()
+        nativeTabGlow:Show()
+        ShowNativeTradeSkillWidgets()
+    end
+end
+
+nativeTab:SetScript("OnClick", function() SetTradeSkillView("native") end)
+nativeTab:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText((GetTradeSkillLine and GetTradeSkillLine()) or SentinelMentor:Trans("LID_PROFESSIONS"))
+    GameTooltip:Show()
+end)
+
+nativeTab:SetScript("OnLeave", GameTooltip_Hide)
+professionTab:SetScript("OnClick", function() SetTradeSkillView(ResolveTradeSkillView(PROFESSION_VIEW_SKILL)) end)
+professionTab:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(IsTradeSkillCombined() and "SentinelMentor" or SentinelMentor:Trans("LID_SKILL"))
+    GameTooltip:Show()
+end)
+
+professionTab:SetScript("OnLeave", GameTooltip_Hide)
+recipeTab:SetScript("OnClick", function() SetTradeSkillView(PROFESSION_VIEW_RECIPES) end)
+recipeTab:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(SentinelMentor:Trans("LID_RECIPES"))
+    GameTooltip:Show()
+end)
+
+recipeTab:SetScript("OnLeave", GameTooltip_Hide)
+local tradeSkillViewIcons = {[PROFESSION_VIEW_SKILL] = "Interface\\Icons\\INV_Misc_Book_09", [PROFESSION_VIEW_RECIPES] = "Interface\\Icons\\INV_Scroll_03"}
+local tradeSkillViewTitles = {[PROFESSION_VIEW_SKILL] = "LID_PROFESSION_FROMTRAINER", [PROFESSION_VIEW_RECIPES] = "LID_PROFESSION_OTHERRECIPES"}
+tradeSkillViewBar.frame = CreateFrame("Frame", nil, professionFrame)
+tradeSkillViewBar.frame:SetHeight(28)
+tradeSkillViewBar.frame:Hide()
+for _, mode in ipairs(TRADESKILL_VIEWS) do
+    local button = CreateFrame("Button", nil, tradeSkillViewBar.frame, "BackdropTemplate")
+    button:SetSize(26, 26)
+    SentinelMentor.Style:Template(button, "raised")
+    button:SetNormalTexture(tradeSkillViewIcons[mode])
+    local bnt = button:GetNormalTexture()
+    if bnt then bnt:ClearAllPoints(); bnt:SetPoint("CENTER"); bnt:SetSize(20, 20); bnt:SetTexCoord(0.06, 0.94, 0.06, 0.94) end
+    button:SetHighlightTexture(SentinelMentor.Style.tex.blank, "ADD")
+    button:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.1)
+    button.selected = button:CreateTexture(nil, "OVERLAY")
+    button.selected:SetAllPoints(button)
+    button.selected:SetTexture(SentinelMentor.Style.tex.blank)
+    local sac = SentinelMentor.Style.colors.accent
+    button.selected:SetVertexColor(sac.r, sac.g, sac.b, 0.3)
+    button.selected:Hide()
+    button:SetScript("OnClick", function() SetTradeSkillView(mode) end)
+    button:SetScript("OnEnter", function(sel)
+        GameTooltip:SetOwner(sel, "ANCHOR_RIGHT")
+        GameTooltip:SetText(SentinelMentor:Trans(tradeSkillViewTitles[mode]))
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", GameTooltip_Hide)
+    tradeSkillViewBar.buttons[mode] = button
+end
+
+function tradeSkillViewBar.Update(x, y)
+    local bar = tradeSkillViewBar.frame
+    local shown = IsTradeSkillCombined() and #EnabledTradeSkillViews() > 1 and TradeSkillFrame ~= nil and TradeSkillFrame:IsShown()
+    bar:SetShown(shown)
+    if not shown then return 0 end
+    bar:ClearAllPoints()
+    bar:SetPoint("TOPLEFT", professionFrame, "TOPLEFT", x, y)
+    bar:SetPoint("TOPRIGHT", professionFrame, "TOPRIGHT", -26, y)
+    local previous
+    for _, mode in ipairs(TRADESKILL_VIEWS) do
+        local button = tradeSkillViewBar.buttons[mode]
+        local enabled = IsProfessionViewEnabled(mode)
+        button:SetShown(enabled)
+        button:ClearAllPoints()
+        if enabled then
+            if previous then button:SetPoint("LEFT", previous, "RIGHT", 4, 0) else button:SetPoint("LEFT", bar, "LEFT", 0, 0) end
+            previous = button
+        end
+        button.selected:SetShown(mode == professionViewMode)
+    end
+    return -32
+end
+
+local tradeSkillHooksInstalled = false
+local function EnsureTradeSkillHooksInstalled()
+    if tradeSkillHooksInstalled or not TradeSkillFrame then return end
+    tradeSkillHooksInstalled = true
+    TradeSkillFrame:HookScript("OnShow", function()
+        PositionTradeSkillTabs()
+        UpdateTradeSkillTabs()
+        SetTradeSkillView("native")
+    end)
+
+    TradeSkillFrame:HookScript("OnHide", function()
+        if professionFrame.compendiumHost then return end
+        professionFrame:Hide()
+        professionTabGlow:Hide()
+        recipeTabGlow:Hide()
+        nativeTabGlow:Hide()
+        nativeTab:Hide()
+        professionTab:Hide()
+        recipeTab:Hide()
+        ShowNativeTradeSkillWidgets()
+    end)
+
+    hooksecurefunc(TradeSkillFrame, "SetScale", function()
+        PositionTradeSkillTabs()
+        if professionFrame:IsShown() then PositionProfessionFrame() end
+    end)
+
+    if TradeSkillFrame:IsShown() then
+        PositionTradeSkillTabs()
+        UpdateTradeSkillTabs()
+        SetTradeSkillView("native")
+    end
+
+    C_Timer.After(4, function()
+        for i = 1, 4 do
+            local t = _G["DragonflightUIProfessionFrameTabButton" .. i]
+            if t then t:HookScript("OnClick", function() SetTradeSkillView("native") end) end
+        end
+
+        if DragonflightUIProfessionFrame then hooksecurefunc(DragonflightUIProfessionFrame, "SetScale", function() if professionFrame:IsShown() then PositionProfessionFrame() end end) end
+    end)
+end
+
+local professionsFrameHooksInstalled = false
+local professionsModeTabContainer
+local professionsModeTabs = {}
+local professionsViewTabs = {}
+local professionsModeActive = false
+local professionsFrameUsesSideTabs = false
+local professionsClosePending = false
+local professionsRestorePending = false
+local function IsProfessionsCombatLocked()
+    return InCombatLockdown and InCombatLockdown()
+end
+
+local function IsProfessionsTabsLayout()
+    return SentinelMentor:GetTabLayout("professionLayout") == "tabs"
+end
+
+local function GetProfessionsActiveTabs()
+    local tabs = {}
+    if IsProfessionsTabsLayout() then
+        for _, view in ipairs(PROFESSION_ALL_VIEWS) do
+            if professionsViewTabs[view.mode] and IsProfessionViewEnabled(view.mode) then table.insert(tabs, professionsViewTabs[view.mode]) end
+        end
+    elseif professionsModeTabs.addon then
+        table.insert(tabs, professionsModeTabs.addon)
+    end
+    return tabs
+end
+
+local function UpdateProfessionsTabsCombatState()
+    local locked = IsProfessionsCombatLocked()
+    for _, list in ipairs({professionsModeTabs, professionsViewTabs}) do
+        for _, tab in pairs(list) do
+            tab.combatLocked = locked
+            tab:SetAlpha(locked and 0.5 or 1)
+            if tab.Icon and tab.Icon.SetDesaturated then tab.Icon:SetDesaturated(locked) end
+        end
+    end
+end
+
+function professionSubTabs.IsOwnSideTab(frame, depth)
+    if not frame or depth > 10 then return false end
+    if frame == professionsModeTabs.addon then return true end
+    for _, tab in pairs(professionsViewTabs) do
+        if frame == tab then return true end
+    end
+    if not frame.GetNumPoints then return false end
+    for index = 1, frame:GetNumPoints() do
+        local _, relativeTo = frame:GetPoint(index)
+        if relativeTo and relativeTo ~= ProfessionsFrame and professionSubTabs.IsOwnSideTab(relativeTo, depth + 1) then return true end
+    end
+    return false
+end
+
+function professionSubTabs.FindForeignSideTab(lastTab)
+    local refLeft, floor = lastTab:GetLeft(), lastTab:GetBottom()
+    if not refLeft or not floor then return nil end
+    local found, foundBottom = nil, floor
+    for _, parent in ipairs({ProfessionsFrame, ProfessionsFrameTabSideBar}) do
+        for _, child in ipairs({parent:GetChildren()}) do
+            if child ~= lastTab and child:IsShown() then
+                local left, bottom, width, height = child:GetLeft(), child:GetBottom(), child:GetWidth(), child:GetHeight()
+                if left and bottom and math.abs(left - refLeft) <= 8 and width <= 64 and height <= 64 and bottom < foundBottom and not professionSubTabs.IsOwnSideTab(child, 0) then found, foundBottom = child, bottom end
+            end
+        end
+    end
+    return found
+end
+
+local function PositionProfessionsFrameModeTabs()
+    if not ProfessionsFrame then return end
+    if SentinelMentor.IsClassicUIForeverProfessions and SentinelMentor:IsClassicUIForeverProfessions() then return end
+    if not professionsModeTabs.addon then return end
+    for _, list in ipairs({professionsModeTabs, professionsViewTabs}) do
+        for _, tab in pairs(list) do tab:ClearAllPoints() end
+    end
+    local previous = nil
+    if professionsFrameUsesSideTabs then
+        local lastTab = ProfessionsFrame.ProfessionsOverviewTab
+        for _, tab in ipairs(ProfessionsFrame.rightProfessionTabs) do
+            if tab:IsShown() then lastTab = tab end
+        end
+
+        lastTab = professionSubTabs.FindForeignSideTab(lastTab) or lastTab
+        for _, tab in ipairs(GetProfessionsActiveTabs()) do
+            if previous then
+                tab:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -2)
+            else
+                tab:SetPoint("TOPLEFT", lastTab, "BOTTOMLEFT", 0, -16)
+            end
+            previous = tab
+        end
+    else
+        professionsModeTabContainer:ClearAllPoints()
+        professionsModeTabContainer:SetPoint("LEFT", ProfessionsFrame.TabSystem, "RIGHT", 20, 0)
+        for _, tab in ipairs(GetProfessionsActiveTabs()) do
+            if previous then
+                tab:SetPoint("LEFT", previous, "RIGHT", 1, 0)
+            else
+                tab:SetPoint("LEFT", professionsModeTabContainer, "LEFT", 0, 0)
+            end
+            previous = tab
+        end
+    end
+end
+
+local function SetProfessionsModeTabSelected(tab, selected)
+    if tab.SetTabSelected then
+        tab:SetTabSelected(selected)
+    else
+        tab:SetChecked(selected)
+    end
+end
+
+local function UpdateProfessionsViewTabSelection()
+    for mode, tab in pairs(professionsViewTabs) do
+        SetProfessionsModeTabSelected(tab, professionsModeActive and professionViewMode == mode)
+    end
+end
+professionSubTabs.UpdateModeTabs = UpdateProfessionsViewTabSelection
+
+local function CloseProfessionsFrameView()
+    if professionFrame.compendiumHost then return end
+    if IsProfessionsCombatLocked() then
+        if professionsModeActive or professionFrame:IsShown() then professionsClosePending = true end
+        return
+    end
+
+    professionsClosePending = false
+    professionsModeActive = false
+    professionPicker.SetHeaderActive(false)
+    professionFrame:Hide()
+    for _, tab in pairs(professionsModeTabs) do
+        SetProfessionsModeTabSelected(tab, false)
+    end
+    UpdateProfessionsViewTabSelection()
+end
+
+local function RestoreProfessionsFramePage()
+    if not professionsModeActive then return end
+    if IsProfessionsCombatLocked() then
+        professionsRestorePending = true
+        return
+    end
+
+    professionsRestorePending = false
+    if professionsFrameUsesSideTabs then
+        if ProfessionsFrame.BookPage then ProfessionsFrame.BookPage:Hide() end
+        if ProfessionsFrame.CraftingPage then ProfessionsFrame.CraftingPage:Show() end
+    elseif ProfessionsFrame.GetTab and ProfessionsFrame.GetElementsForTab then
+        local tabID = ProfessionsFrame:GetTab()
+        for _, page in ipairs(tabID and ProfessionsFrame:GetElementsForTab(tabID) or {}) do
+            page:Show()
+        end
+    end
+end
+
+local professionsCombatWatcher = CreateFrame("Frame")
+professionsCombatWatcher:RegisterEvent("PLAYER_REGEN_DISABLED")
+professionsCombatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+professionsCombatWatcher:SetScript("OnEvent", function(_, event)
+    UpdateProfessionsTabsCombatState()
+    if event ~= "PLAYER_REGEN_ENABLED" then return end
+    if professionsRestorePending then RestoreProfessionsFramePage() end
+    if professionsClosePending then CloseProfessionsFrameView() end
+end)
+
+local function OpenProfessionsFrameView(mode)
+    if professionFrame.compendiumHost then SentinelMentor:UndockCompendiumFrame(professionFrame) end
+    if IsProfessionsCombatLocked() then
+        if UIErrorsFrame and ERR_NOT_IN_COMBAT then UIErrorsFrame:AddMessage(ERR_NOT_IN_COMBAT, 1, 0.1, 0.1) end
+        return
+    end
+
+    if mode and SentinelMentor_Character then SentinelMentor_Character.professionView = mode end
+    professionViewMode = professionSubTabs.GetSavedView()
+    professionPicker.Reset()
+    professionsModeActive = true
+    if ProfessionsFrame.Pages then
+        for _, page in ipairs(ProfessionsFrame.Pages) do
+            page:Hide()
+        end
+    else
+        if ProfessionsFrame.BookPage then ProfessionsFrame.BookPage:Hide() end
+        if ProfessionsFrame.CraftingPage then ProfessionsFrame.CraftingPage:Hide() end
+    end
+
+    if professionsFrameUsesSideTabs or professionSubTabs.panel then
+        professionListBg:Hide()
+    else
+        professionListBg:ClearAllPoints()
+        professionListBg:SetAllPoints(professionFrame)
+        professionListBg:SetColorTexture(0, 0, 0, 1)
+        professionListBg:Show()
+    end
+
+    PositionProfessionFrame()
+    professionFrame:Show()
+    for _, tab in pairs(professionsModeTabs) do
+        SetProfessionsModeTabSelected(tab, true)
+    end
+    UpdateProfessionsViewTabSelection()
+
+    if professionsFrameUsesSideTabs then
+        ProfessionsFrame.ProfessionsOverviewTab:SetChecked(false)
+        for _, tab in ipairs(ProfessionsFrame.rightProfessionTabs) do
+            tab:SetChecked(false)
+        end
+    elseif ProfessionsFrame.TabSystem.SetTabVisuallySelected then
+        ProfessionsFrame.TabSystem:SetTabVisuallySelected(0)
+    end
+
+    professionPicker.SetHeaderActive(true)
+    if professionPicker.dropdown then
+        professionPicker.dropdown:SetFrameLevel(professionFrame:GetFrameLevel() + 50)
+        professionPicker.ApplyInputMode()
+    end
+
+    professionSubTabs.Update()
+    SentinelMentor_ProfessionRefresh()
+end
+
+local function IsTradeSkillAddonEnabled()
+    return SentinelMentor:IsTabEnabled("professions") and (IsProfessionViewEnabled(PROFESSION_VIEW_SKILL) or IsProfessionViewEnabled(PROFESSION_VIEW_RECIPES))
+end
+
+local function IsProfessionsFrameAddonEnabled()
+    if SentinelMentor.IsClassicUIForeverProfessions and SentinelMentor:IsClassicUIForeverProfessions() then return false end
+    return SentinelMentor:IsTabEnabled("professions") and SentinelMentor:HasProfessionTabs()
+end
+
+local function ShowTradeSkillTabs()
+    UpdateTradeSkillTabs()
+end
+
+local function ShowProfessionsModeTabs()
+    local enabled = IsProfessionsFrameAddonEnabled() and ProfessionsFrame ~= nil and ProfessionsFrame:IsShown()
+    local tabsLayout = IsProfessionsTabsLayout()
+    if professionsModeTabs.addon then professionsModeTabs.addon:SetShown(enabled and not tabsLayout) end
+    for mode, tab in pairs(professionsViewTabs) do
+        tab:SetShown(enabled and tabsLayout and IsProfessionViewEnabled(mode))
+    end
+end
+
+local function ApplyProfessionTabSettings()
+    PROFESSION_SUB_VIEWS = SentinelMentor:FilterTabViews(PROFESSION_ALL_VIEWS, "profession_")
+    if professionSubTabs.bar then
+        for index, view in ipairs(PROFESSION_ALL_VIEWS) do
+            professionSubTabs.bar:SetTabShown(index, IsProfessionViewEnabled(view.mode))
+        end
+    end
+
+    local modeEnabled = IsProfessionViewEnabled(professionViewMode)
+    if not modeEnabled and PROFESSION_SUB_VIEWS[1] then professionViewMode = PROFESSION_SUB_VIEWS[1].mode end
+    if TradeSkillFrame and TradeSkillFrame:IsShown() then
+        PositionTradeSkillTabs()
+        ShowTradeSkillTabs()
+        if professionFrame:IsShown() and not professionFrame.compendiumHost then
+            if not IsTradeSkillAddonEnabled() or not modeEnabled then SetTradeSkillView("native") else SetTradeSkillView(ResolveTradeSkillView(professionViewMode)) end
+        end
+    end
+
+    local professionsEnabled = IsProfessionsFrameAddonEnabled()
+    ShowProfessionsModeTabs()
+    if ProfessionsFrame and professionsFrameHooksInstalled then PositionProfessionsFrameModeTabs() end
+    if professionsModeActive then
+        if not professionsEnabled then
+            RestoreProfessionsFramePage()
+            CloseProfessionsFrameView()
+        else
+            PositionProfessionFrame()
+            UpdateProfessionsViewTabSelection()
+            if not modeEnabled then SentinelMentor_ProfessionRefresh() end
+        end
+    end
+
+    professionSubTabs.Update()
+end
+
+SentinelMentor:OnTabSettingsChanged(ApplyProfessionTabSettings)
+local function CreateProfessionsFrameSystemTab(tabID, text, icon, mode)
+    local tab = CreateFrame("Button", nil, professionsModeTabContainer, "TabSystemButtonTemplate")
+    tab.GetTabSystem = function() return ProfessionsFrame.TabSystem end
+    tab:Init(tabID, nil, icon)
+    tab:SetTooltipText(text)
+    tab:SetScript("OnClick", function(self) if not self.combatLocked then OpenProfessionsFrameView(mode) end end)
+    tab:Show()
+    if mode then professionsViewTabs[mode] = tab else professionsModeTabs.addon = tab end
+    return tab
+end
+
+local function CreateProfessionsFrameSideTab(name, text, icon, mode)
+    local tab = CreateFrame("Frame", name, ProfessionsFrame, "LargeSideTabButtonTemplate")
+    tab:SetFrameLevel(ProfessionsFrame:GetFrameLevel() + 200)
+    tab:EnableMouse(true)
+    tab.Icon:SetTexture(icon)
+    tab.Icon:SetSize(30, 30)
+    tab.Icon:SetTexCoord(0.03125, 0.96875, 0.03125, 0.96875)
+    tab.tooltipText = text
+    tab:SetFillToInterior(true)
+    tab:SetChecked(false)
+    tab:SetCustomOnMouseUpHandler(function(self, button, upInside) if button == "LeftButton" and upInside and not self.combatLocked then OpenProfessionsFrameView(mode) end end)
+    tab:Show()
+    if mode then professionsViewTabs[mode] = tab else professionsModeTabs.addon = tab end
+    return tab
+end
+
+local function InstallProfessionsFrameShoulderTabs()
+    local indicators = ProfessionsFrame.TabIndicators
+    if not (indicators and indicators.RightTabButton and IsKeyDown) then return end
+    local driver = SentinelMentor.CreateDetachedFrame("Frame", ProfessionsFrame)
+    local leftButton = CreateFrame("Button", "SentinelMentorProfessionsShoulderLeft", UIParent)
+    leftButton:SetSize(1, 1)
+    leftButton:SetPoint("BOTTOMRIGHT", UIParent, "TOPLEFT", -10, 10)
+    leftButton:EnableMouse(false)
+    leftButton:RegisterForClicks("AnyDown")
+    leftButton:SetScript("OnClick", function()
+        if not professionsModeActive or IsProfessionsCombatLocked() then return end
+        if IsProfessionsTabsLayout() then
+            for index, view in ipairs(PROFESSION_SUB_VIEWS) do
+                if view.mode == professionViewMode and index > 1 then
+                    OpenProfessionsFrameView(PROFESSION_SUB_VIEWS[index - 1].mode)
+                    return
+                end
+            end
+        end
+        local tab = indicators.visibleTabs and indicators.visibleTabs[indicators.currentIndex]
+        if tab and tab == ProfessionsFrame.ProfessionsOverviewTab then
+            if ProfessionsFrame.CraftingPage then ProfessionsFrame.CraftingPage:Hide() end
+            if ProfessionsFrame.BookPage then ProfessionsFrame.BookPage:Show() end
+        else
+            RestoreProfessionsFramePage()
+        end
+
+        CloseProfessionsFrameView()
+        if tab and tab.SetChecked then tab:SetChecked(true) end
+    end)
+
+    local leftBinding = "CLICK SentinelMentorProfessionsShoulderLeft:LeftButton"
+    local leftBound = false
+    local function UpdateLeftBinding(active)
+        if InCombatLockdown() then return end
+        if active then
+            if GetBindingAction("PADLSHOULDER", true) ~= leftBinding then SetOverrideBindingClick(leftButton, true, "PADLSHOULDER", leftButton:GetName(), "LeftButton") end
+            leftBound = true
+        elseif leftBound then
+            ClearOverrideBindings(leftButton)
+            leftBound = false
+        end
+    end
+
+    driver:SetScript("OnHide", function() UpdateLeftBinding(false) end)
+    local rightHeld, previousIndex = false, nil
+    driver:SetScript("OnShow", function()
+        rightHeld = IsKeyDown("PADRSHOULDER") and true or false
+        previousIndex = nil
+    end)
+
+    driver:SetScript("OnUpdate", function()
+        local down = IsKeyDown("PADRSHOULDER") and true or false
+        local pressed = down and not rightHeld
+        rightHeld = down
+        local indexBefore = previousIndex
+        previousIndex = indicators.currentIndex
+        local activeTabs = GetProfessionsActiveTabs()
+        local firstTab, lastTab = activeTabs[1], activeTabs[#activeTabs]
+        local visible = firstTab and firstTab:IsShown() and indicators:IsVisible()
+        UpdateLeftBinding(visible and professionsModeActive)
+        if not visible then return end
+        local rightButton = indicators.RightTabButton
+        if select(2, rightButton:GetPoint(1)) ~= lastTab then
+            rightButton:ClearAllPoints()
+            rightButton:SetPoint("TOP", lastTab, "BOTTOM", 0, 0)
+        end
+
+        local tabsLayout = IsProfessionsTabsLayout()
+        if pressed and professionsModeActive and tabsLayout and not firstTab.combatLocked then
+            for index, view in ipairs(PROFESSION_SUB_VIEWS) do
+                if view.mode == professionViewMode and PROFESSION_SUB_VIEWS[index + 1] then
+                    OpenProfessionsFrameView(PROFESSION_SUB_VIEWS[index + 1].mode)
+                    break
+                end
+            end
+            return
+        end
+
+        local lastIndex = indicators.visibleTabs and #indicators.visibleTabs or 0
+        if pressed and not professionsModeActive and not indicators.isLocked and lastIndex > 0 and indexBefore == lastIndex and indicators.currentIndex == lastIndex then
+            C_Timer.After(0.05, function()
+                if indicators.currentIndex == indexBefore and not professionsModeActive and ProfessionsFrame:IsVisible() and not firstTab.combatLocked then
+                    OpenProfessionsFrameView(tabsLayout and PROFESSION_SUB_VIEWS[1] and PROFESSION_SUB_VIEWS[1].mode or nil)
+                end
+            end)
+        end
+    end)
+end
+
+local function InstallProfessionsFrameIntegration()
+    if professionsFrameHooksInstalled or not ProfessionsFrame or professionFrame.compendiumHost then return end
+    professionsFrameUsesSideTabs = ProfessionsFrame.ProfessionsOverviewTab and ProfessionsFrame.rightProfessionTabs and true or false
+    if not professionsFrameUsesSideTabs and not ProfessionsFrame.TabSystem then return end
+    professionsFrameHooksInstalled = true
+    professionFrame:SetParent(ProfessionsFrame)
+    professionFrame:SetFrameStrata(ProfessionsFrame:GetFrameStrata())
+    professionFrame:SetFrameLevel(ProfessionsFrame:GetFrameLevel() + 300)
+    SentinelMentor.RunDetached(professionFrame, function()
+        professionSubTabs.Create()
+        professionPicker.Create()
+    end)
+
+    professionSubTabs.PrewarmRows()
+    if professionsFrameUsesSideTabs then
+        CreateProfessionsFrameSideTab("SentinelMentorProfessionsTab", "SentinelMentor", SentinelMentor:GetAddonIcon())
+        for index, view in ipairs(PROFESSION_ALL_VIEWS) do
+            CreateProfessionsFrameSideTab("SentinelMentorProfessionsViewTab" .. index, SentinelMentor:Trans(view.title), view.icon, view.mode)
+        end
+        hooksecurefunc(ProfessionsFrame, "RefreshRightTabs", function()
+            PositionProfessionsFrameModeTabs()
+            C_Timer.After(0, PositionProfessionsFrameModeTabs)
+        end)
+        hooksecurefunc(ProfessionsFrame, "RightTabSelected", CloseProfessionsFrameView)
+        InstallProfessionsFrameShoulderTabs()
+    else
+        professionsModeTabContainer = CreateFrame("Frame", "SentinelMentorProfessionsModeTabs", ProfessionsFrame)
+        professionsModeTabContainer:SetSize(260, math.max(32, ProfessionsFrame.TabSystem:GetHeight()))
+        professionsModeTabContainer:SetFrameLevel(ProfessionsFrame.TabSystem:GetFrameLevel() + 200)
+        CreateProfessionsFrameSystemTab(1001, "SentinelMentor", SentinelMentor:GetAddonIcon())
+        for index, view in ipairs(PROFESSION_ALL_VIEWS) do
+            CreateProfessionsFrameSystemTab(1001 + index, SentinelMentor:Trans(view.title), view.icon, view.mode)
+        end
+        hooksecurefunc(ProfessionsFrame, "SetTab", CloseProfessionsFrameView)
+        if ProfessionsFrame.UpdateTabs then hooksecurefunc(ProfessionsFrame, "UpdateTabs", PositionProfessionsFrameModeTabs) end
+    end
+
+    UpdateProfessionsTabsCombatState()
+    PositionProfessionsFrameModeTabs()
+    ProfessionsFrame:HookScript("OnShow", function()
+        RestoreProfessionsFramePage()
+        ShowProfessionsModeTabs()
+        PositionProfessionsFrameModeTabs()
+        CloseProfessionsFrameView()
+        C_Timer.After(0, PositionProfessionsFrameModeTabs)
+    end)
+
+    ProfessionsFrame:HookScript("OnHide", function()
+        RestoreProfessionsFramePage()
+        CloseProfessionsFrameView()
+    end)
+
+    hooksecurefunc(ProfessionsFrame, "SetScale", function() if professionFrame:IsShown() then PositionProfessionFrame() end end)
+    ApplyProfessionTabSettings()
+end
+
+if ProfessionsFrame then
+    InstallProfessionsFrameIntegration()
+else
+    local professionsFrameLoader = CreateFrame("Frame")
+    professionsFrameLoader:RegisterEvent("ADDON_LOADED")
+    professionsFrameLoader:SetScript("OnEvent", function(self, _, addonName)
+        if addonName ~= "Blizzard_Professions" then return end
+        self:UnregisterEvent("ADDON_LOADED")
+        InstallProfessionsFrameIntegration()
+    end)
+end
+
+local tradeSkillWatcher = CreateFrame("Frame")
+for _, event in ipairs({"TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "TRADE_SKILL_LIST_UPDATE", "PLAYER_MONEY", "UPDATE_FACTION"}) do
+    SentinelMentor:RegisterEvent(tradeSkillWatcher, event)
+end
+
+tradeSkillWatcher:SetScript("OnEvent", function(_, event)
+    EnsureTradeSkillHooksInstalled()
+    InstallProfessionsFrameIntegration()
+    if event == "TRADE_SKILL_SHOW" and professionsFrameHooksInstalled then C_Timer.After(0, PositionProfessionsFrameModeTabs) end
+    if (event == "TRADE_SKILL_UPDATE" or event == "TRADE_SKILL_LIST_UPDATE") and professionFrame:IsShown() then
+        SentinelMentor_ProfessionRefresh()
+        if not professionFrame.compendiumHost then HideNativeTradeSkillWidgets() end
+    elseif (event == "PLAYER_MONEY" or event == "UPDATE_FACTION") and professionFrame:IsShown() then
+        SentinelMentor_ProfessionRefresh()
+    end
+end)
+
+function professionPicker.PopulateCompendiumMenu(view, menu)
+    for index, group in ipairs({professionPicker.GetLists()}) do
+        if #group > 0 then
+            menu:CreateTitle(SentinelMentor:Trans(index == 1 and "LID_YOURPROFESSIONS" or "LID_OTHERPROFESSIONS"))
+            for _, info in ipairs(group) do
+                local key = info.key
+                menu:CreateRadio(professionPicker.GetLabel(info), function() return view.professionKey == key end, function() view.professionKey = key; view:Refresh() end)
+            end
+        end
+    end
+end
+
+function SentinelMentor:CreateCompendiumProfessions(host)
+    local view = self:CreateCompendiumListView(host, PROFESSION_ALL_VIEWS, professionSubTabs.GetSavedView(), self.ProfessionRowHeight, function(entry) return IsProfessionViewEnabled(entry.mode) end)
+    if not host.contentAPI then self.CompendiumProfessionView = view end
+    view:AddSpoilerFreeCheckbox("professionSpoilerFree", "LID_PROFSPOILERFREE_DESC")
+    view.BuildItems = function(current)
+        if not current.professionKey then
+            local owned, others = professionPicker.GetLists()
+            current.professionKey = owned[1] and owned[1].key or others[1] and others[1].key
+        end
+        local info = current.professionKey and professionPicker.GetInfo(current.professionKey)
+        if current.dropdown then
+            current.dropdown:SetText(info and professionPicker.GetLabel(info) or SentinelMentor:Trans("LID_PROFESSIONS"))
+            professionPicker.UpdateWidth(current.dropdown, current.measure)
+            current.title:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", -current.dropdown:GetWidth() - 10, 17)
+        end
+        return SentinelMentor:BuildProfessionViewItems(current.mode, host.searchText, current.professionKey, info and info.name, info and info.rank or 0)
+    end
+    if MenuUtil and MenuUtil.CreateRootMenuDescription then
+        view.dropdown = SentinelMentor.Style:Dropdown(host, 180)
+        view.dropdown:SetSize(180, 26)
+        view.measure = view.dropdown:CreateFontString(nil, "ARTWORK")
+        view.measure:SetPoint("TOPLEFT")
+        view.measure:SetAlpha(0)
+        view.dropdown:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", 0, 2)
+        view.title:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", -190, 17)
+        view.dropdown:SetupMenu(function(_, menu) professionPicker.PopulateCompendiumMenu(view, menu) end)
+    end
+    host:SetScript("OnShow", function() view:Refresh() end)
+    return view
+end
