@@ -69,15 +69,7 @@ function SentinelMentor:AddLanguageButton(win)
 
     local parent = win.titleBar or win
     local button
-    if self:GetWoWBuild() == "RETAIL" and self:CheckTemplates("WowStyle1DropdownTemplate") then
-        button = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
-        button:SetScale(0.8)
-        button:SetSize(162.5, 25)
-        button:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, -1.25)
-        button:SetSelectionText(function() return self:GetLanguageName() end)
-        button:SetTooltip(function(tooltip) tooltip:SetText(self:Trans("LID_LANGUAGE")) end)
-        button:SetupMenu(LanguageMenu)
-    else
+    do
         button = self:CreateButton(nil, parent)
         button:SetSize(130, 20)
         button:SetPoint("TOPLEFT", parent, "TOPLEFT", 7, -2)

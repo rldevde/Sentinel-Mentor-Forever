@@ -1,8 +1,0 @@
-<Bindings>
-    <Binding name="SENTINELMENTORJOURNAL_TOGGLE">
-        SentinelMentorJournal_Toggle()
-    </Binding>
-    <Binding name="SENTINELMENTORJOURNAL_OPENITEM">
-        SentinelMentorJournal_OpenHoveredItem()
-    </Binding>
-</Bindings>

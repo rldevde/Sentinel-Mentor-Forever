@@ -96,7 +96,6 @@ UI\HunterBeastsExtras.lua
 UI\Spellbook.lua
 
 
-Bindings.xml
 
 Core\Bootstrap.lua
 Localization\Localization.lua
