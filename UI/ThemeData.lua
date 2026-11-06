@@ -253,26 +253,6 @@ SMJ.DUNGEON_HOME_TEXCOORD["Scarlet Monastery: Cathedral"] = { 0, 1, 0.06, 0.94 }
 SMJ.DUNGEON_HOME_ART["Scarlet Monastery: Armory"] = "Interface\\AddOns\\SentinelMentor\\Media\\ScarletMonasteryArmoryHome"
 SMJ.DUNGEON_HOME_TEXCOORD["Scarlet Monastery: Armory"] = { 0, 1, 0.06, 0.94 }
 
--- Uldaman and Zul'Farrak: the client's own loading screens when it has them.
-do
-    local function Has(path)
-        if not GetFileIDFromPath then return false end
-        local ok, id = pcall(GetFileIDFromPath, path)
-        return ok and id ~= nil
-    end
-    for name, paths in pairs({
-        ["Uldaman"] = { "Interface\\Glues\\LoadingScreens\\LoadScreenUldaman" },
-        ["Zul'Farrak"] = { "Interface\\Glues\\LoadingScreens\\LoadScreenZulFarrak", "Interface\\Glues\\LoadingScreens\\LoadScreenZulfarrak" },
-    }) do
-        for _, path in ipairs(paths) do
-            if Has(path) then
-                SMJ.DUNGEON_HOME_ART[name] = path
-                SMJ.DUNGEON_HOME_TEXCOORD[name] = { 0.02, 0.98, 0.24, 0.82 }
-                break
-            end
-        end
-    end
-end
 
 -- Bundled card art (the client may not ship these loading screens yet).
 for name, file in pairs({ ["Uldaman"] = "UldamanHome", ["Zul'Farrak"] = "ZulFarrakHome", ["Razorfen Downs"] = "RazorfenDownsHome",
@@ -285,6 +265,55 @@ for name, file in pairs({ ["Uldaman"] = "UldamanHome", ["Zul'Farrak"] = "ZulFarr
     ["Blackmaw Hold"] = "BlackmawHoldHome", ["Shaper's Terrace"] = "ShapersTerraceHome" }) do
     SMJ.DUNGEON_HOME_ART[name] = "Interface\\AddOns\\SentinelMentor\\Media\\" .. file
     SMJ.DUNGEON_HOME_TEXCOORD[name] = { 0, 1, 0.06, 0.94 }
+end
+
+-- Prefer the client's own artwork: loading screens and encounter-journal
+-- cards win over bundled images; the bundled art only fills the gaps for
+-- dungeons the client cannot draw.
+do
+    local function Has(path)
+        if not GetFileIDFromPath then return false end
+        local ok, id = pcall(GetFileIDFromPath, path)
+        return ok and id ~= nil
+    end
+    local function EJ(n) return "Interface\\EncounterJournal\\UI-EJ-DUNGEONBUTTON-" .. n end
+    local function LS(n) return "Interface\\Glues\\LoadingScreens\\LoadScreen" .. n end
+    for name, paths in pairs({
+        ["The Deadmines"] = { EJ("Deadmines"), LS("Deadmines") },
+        ["Shadowfang Keep"] = { EJ("ShadowfangKeep"), LS("Shadowfang") },
+        ["Wailing Caverns"] = { EJ("WailingCaverns"), LS("WailingCaverns") },
+        ["Blackfathom Deeps"] = { EJ("BlackfathomDeeps"), LS("BlackfathomDeeps") },
+        ["The Stockade"] = { EJ("StormwindStockade"), EJ("Stockades"), LS("StormwindStockade"), LS("Stockade") },
+        ["Ragefire Chasm"] = { EJ("RagefireChasm"), LS("Ragefire") },
+        ["Gnomeregan"] = { EJ("Gnomeregan"), LS("Gnomeregan") },
+        ["Razorfen Kraul"] = { EJ("RazorfenKraul"), LS("RazorfenKraul") },
+        ["Razorfen Downs"] = { EJ("RazorfenDowns"), LS("RazorfenDowns") },
+        ["Uldaman"] = { EJ("Uldaman"), LS("Uldaman") },
+        ["Zul'Farrak"] = { EJ("ZulFarrak"), LS("ZulFarrak"), LS("Zulfarrak") },
+        ["Maraudon"] = { EJ("Maraudon"), LS("Maraudon") },
+        ["Sunken Temple"] = { EJ("SunkenTemple"), EJ("TempleofAtalHakkar"), LS("SunkenTemple"), LS("TempleOfAtalHakkar") },
+        ["Blackrock Depths"] = { EJ("BlackrockDepths"), LS("BlackrockDepths") },
+        ["Lower Blackrock Spire"] = { EJ("LowerBlackrockSpire"), EJ("BlackrockSpire"), LS("LowerBlackrockSpire"), LS("BlackrockSpire") },
+        ["Upper Blackrock Spire"] = { EJ("UpperBlackrockSpire"), LS("UpperBlackrockSpire") },
+        ["Dire Maul: East"] = { EJ("DireMaulEast"), EJ("DireMaul"), LS("DireMaul") },
+        ["Dire Maul: West"] = { EJ("DireMaulWest"), EJ("DireMaul"), LS("DireMaul") },
+        ["Dire Maul: North"] = { EJ("DireMaulNorth"), EJ("DireMaul"), LS("DireMaul") },
+        ["Stratholme: Living"] = { EJ("Stratholme"), LS("Stratholme") },
+        ["Stratholme: Undead"] = { EJ("Stratholme"), LS("Stratholme") },
+        ["Scholomance"] = { EJ("Scholomance"), LS("Scholomance") },
+        ["Scarlet Monastery: Graveyard"] = { EJ("ScarletMonasteryGraveyard"), EJ("ScarletMonastery"), LS("ScarletMonastery") },
+        ["Scarlet Monastery: Library"] = { EJ("ScarletMonasteryLibrary"), EJ("ScarletMonastery"), LS("ScarletMonastery") },
+        ["Scarlet Monastery: Armory"] = { EJ("ScarletMonasteryArmory"), EJ("ScarletMonastery"), LS("ScarletMonastery") },
+        ["Scarlet Monastery: Cathedral"] = { EJ("ScarletMonasteryCathedral"), EJ("ScarletMonastery"), LS("ScarletMonastery") },
+    }) do
+        for _, path in ipairs(paths) do
+            if Has(path) then
+                SMJ.DUNGEON_HOME_ART[name] = path
+                SMJ.DUNGEON_HOME_TEXCOORD[name] = { 0.02, 0.98, 0.24, 0.82 }
+                break
+            end
+        end
+    end
 end
 
 -- Cards whose art ends in a dark strip get a coloured band over the bottom
