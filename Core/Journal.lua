@@ -6626,34 +6626,35 @@ local function MakeHomeDungeonCard(parent, dungeonName)
     button:SetBackdropColor(0.02, 0.02, 0.02, 0.45)
     button:SetBackdropBorderColor(0.34, 0.34, 0.34, 1)
 
+    -- flat dark fill; gold accent edge left; centered icon + text
     button.art = button:CreateTexture(nil, "ARTWORK", nil, 1)
     button.art:SetPoint("TOPLEFT", 4, -4)
     button.art:SetPoint("BOTTOMRIGHT", -4, 4)
-    button.art:SetTexture(DUNGEON_HOME_ART[dungeonName])
-    local crop = DUNGEON_HOME_TEXCOORD[dungeonName] or { 0.03, 0.97, 0.05, 0.95 }
-    button.art:SetTexCoord(crop[1], crop[2], crop[3], crop[4])
-    button.art:SetVertexColor(1, 1, 1, 1)
-    button.art:SetAlpha(1)
+    button.art:SetColorTexture(0.05, 0.055, 0.09, 1)
 
-    button.topShade = button:CreateTexture(nil, "ARTWORK", nil, 2)
-    button.topShade:SetTexture("Interface\\Buttons\\WHITE8X8")
-    button.topShade:SetPoint("TOPLEFT", 4, -4)
-    button.topShade:SetPoint("TOPRIGHT", -4, -4)
-    button.topShade:SetHeight(42)
-    button.topShade:SetColorTexture(0, 0, 0, 0.42)
+    button.iconBack = button:CreateTexture(nil, "ARTWORK", nil, 2)
+    button.iconBack:SetSize(52, 52)
+    button.iconBack:SetPoint("LEFT", 20, -8)
+    button.iconBack:SetColorTexture(0.92, 0.68, 0.20, 0.30)
 
-    button.fullShade = button:CreateTexture(nil, "ARTWORK", nil, 0)
+    button.icon = button:CreateTexture(nil, "ARTWORK", nil, 3)
+    button.icon:SetSize(46, 46)
+    button.icon:SetPoint("CENTER", button.iconBack, "CENTER", 0, 0)
+    button.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    local _dd = DB[dungeonName]
+    button.icon:SetTexture((_dd and _dd.icon) or "Interface\\Icons\\INV_Misc_QuestionMark")
+
+    button.accent = button:CreateTexture(nil, "ARTWORK", nil, 2)
+    button.accent:SetPoint("TOPLEFT", 4, -4)
+    button.accent:SetPoint("BOTTOMLEFT", 4, 4)
+    button.accent:SetWidth(3)
+    button.accent:SetColorTexture(0.92, 0.68, 0.20, 0.85)
+
+    button.fullShade = button:CreateTexture(nil, "ARTWORK", nil, 4)
     button.fullShade:SetTexture("Interface\\Buttons\\WHITE8X8")
     button.fullShade:SetPoint("TOPLEFT", 4, -4)
     button.fullShade:SetPoint("BOTTOMRIGHT", -4, 4)
     button.fullShade:SetColorTexture(0.02, 0.02, 0.02, 0.10)
-
-    button.previewIcon = button:CreateTexture(nil, "ARTWORK", nil, 2)
-    button.previewIcon:SetSize(62, 62)
-    button.previewIcon:SetPoint("CENTER", 0, -5)
-    button.previewIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    button.previewIcon:SetAlpha(0.55)
-    button.previewIcon:Hide()
 
     button.innerGlow = button:CreateTexture(nil, "ARTWORK", nil, 3)
     button.innerGlow:SetTexture("Interface\\Buttons\\WHITE8X8")
@@ -6669,8 +6670,8 @@ local function MakeHomeDungeonCard(parent, dungeonName)
     button.highlight:SetColorTexture(1, 1, 1, 0.08)
 
     button.title = button:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    button.title:SetPoint("TOPLEFT", 16, -14)
-    button.title:SetWidth(220)
+    button.title:SetPoint("TOPLEFT", 84, -14)
+    button.title:SetWidth(200)
     button.title:SetJustifyH("LEFT")
     button.title:SetJustifyV("TOP")
     button.title:SetText(DungeonName(dungeonName))
@@ -6890,16 +6891,8 @@ RefreshHomeDungeonCards = function()
             .. ((finishedCount > 0) and (finishedCount .. "/" .. factionQuestCount) or tostring(factionQuestCount))
             .. " " .. (factionQuestCount == 1 and L("QUEST") or L("QUESTS_LOWER"))
         )
-        local art = DUNGEON_HOME_ART[dungeonName]
-        if art then
-            card.art:SetTexture(art)
-            card.art:SetVertexColor(1, 1, 1, 1)
-        else
-            card.art:SetTexture("Interface\\FrameGeneral\\UI-Background-Rock")
-            card.art:SetVertexColor(0.42, 0.36, 0.28, 1)
-        end
-        local crop = DUNGEON_HOME_TEXCOORD[dungeonName] or { 0.03, 0.97, 0.05, 0.95 }
-        card.art:SetTexCoord(crop[1], crop[2], crop[3], crop[4])
+        local dd = DB[dungeonName]
+        card.icon:SetTexture((dd and dd.icon) or "Interface\\Icons\\INV_Misc_QuestionMark")
         if SMJ.ApplyHomeBottomBand then pcall(SMJ.ApplyHomeBottomBand, card, dungeonName) end
         if card.previewIcon then card.previewIcon:Hide() end
         -- Announced dungeons: a centred "Coming Soon" instead of art and counts.
@@ -8075,8 +8068,8 @@ local function CreateGlobalSearchUI()
                         dungeonName = dungeonName,
                         displayName = DungeonName(dungeonName),
                         subText = DungeonField(dungeonName, "location", dungeon.location or ""),
-                        icon = DUNGEON_HOME_ART[dungeonName] or dungeon.icon,
-                        texCoord = DUNGEON_HOME_TEXCOORD[dungeonName],
+                        icon = dungeon.icon,
+                        texCoord = nil,
                         score = 0,
                     }
                 end
@@ -8096,8 +8089,8 @@ local function CreateGlobalSearchUI()
                     dungeonName = dungeonName,
                     displayName = localizedDungeon,
                     subText = DungeonField(dungeonName, "location", dungeon.location or ""),
-                    icon = DUNGEON_HOME_ART[dungeonName] or dungeon.icon,
-                    texCoord = DUNGEON_HOME_TEXCOORD[dungeonName],
+                    icon = dungeon.icon,
+                    texCoord = nil,
                 }, query, -30, localizedDungeon, dungeonName, aliasText)
 
                 for bossIndex, boss in ipairs((#query >= 2) and dungeon.bosses or {}) do
