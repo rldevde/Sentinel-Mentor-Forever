@@ -30,6 +30,7 @@
 | Waffen-Skills | Alle Waffenfertigkeiten plus Fundorte der Ausbilder |
 | Berufe | Lehrer-Rezepte, sonstige Rezepte (Drops/Händler/Quests), Spezialisierungs-Lehrer |
 | Smarte Werkzeuge | Suche, Ignore-Listen, Spoilerfrei-Modus, Preisanzeige mit Ruf-Rabatten, Auto-Zauberränge, kompaktes Kartenlayout |
+| Dungeon-Journal | Bosse, Beute, Quests, Eingänge und Routen für jeden Dungeon — mit eigenem Artwork und Themes, Favoriten, LFG-Kürzeln und Karten-Markierungen |
 
 ## Installation
 
@@ -40,6 +41,7 @@
 ## Bedienung
 
 - `/sentinelmentor` oder der Minimap-Button öffnet die Einstellungen
+- `/smj` oder Addon-Kompartment / Tastenbelegung öffnet das Dungeon-Journal
 - Tabs im Zauberbuch und Berufefenster wechseln die Ansicht
 - Rechtsklick auf einen Zauber ignoriert ihn (einzelner Rang oder alle Ränge)
 - Klick auf Lehrer-Einträge setzt einen Wegpunkt zum nächsten Lehrer

@@ -30,6 +30,7 @@
 | Weapon skills | Every weapon skill plus where to learn it |
 | Professions | Trainer recipes, other recipes (drops/vendors/quests), specialization trainers |
 | Smart tools | Search, ignore lists, spoiler-free mode, price display with reputation discounts, auto spell ranks, compact card layout |
+| Dungeon journal | Bosses, loot, quests, entrances and routes for every dungeon — with per-dungeon artwork and themes, favorites, LFG shortcuts and map markers |
 
 ## Installation
 
@@ -40,6 +41,7 @@
 ## Usage
 
 - `/sentinelmentor` or the minimap button opens the settings
+- `/smj` or the addon compartment / keybinding opens the dungeon journal
 - Tabs in the spellbook and professions window switch between views
 - Right-click a spell to ignore it (single rank or all ranks)
 - Click trainer rows to set a waypoint to the nearest trainer

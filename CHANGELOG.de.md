@@ -15,3 +15,4 @@
 - 11 Client-Sprachen: enUS, deDE, esES, esMX, frFR, itIT, koKR, ptBR, ruRU, zhCN, zhTW.
 - Einheitliche Datenbank (`SentinelMentorDB`) für Klassen, Begleiter, Berufe (Skills + Rezepte), Lehrer-Standorte, Waffen-Skills und Jäger-Bestien.
 - Copyright-Modul mit Integritätsprüfung (`Core/Copyright.lua`).
+- Dungeon-Journal integriert: Bosse, Beute, Quests, Eingänge, Routen, thematisiertes Artwork pro Dungeon, Favoriten, LFG-Button, Karten-Markierungen, Einstellungen und Addon-Kompartment-Eintrag.

@@ -10,11 +10,14 @@
 ## Category: User Interface
 ## Category-deDE: Benutzerinterface
 ## DefaultState: enabled
-## SavedVariables: SentinelMentor_Global, SentinelMentor_Data, SentinelMentor_PetData, SentinelMentor_PetTrainerData, SentinelMentor_ProfessionData, SentinelMentor_IgnoredProfessions
-## SavedVariablesPerCharacter: SentinelMentor_Character, SentinelMentor_Ignored, SentinelMentor_IgnoredNames
+## SavedVariables: SentinelMentor_Global, SentinelMentor_Data, SentinelMentor_PetData, SentinelMentor_PetTrainerData, SentinelMentor_ProfessionData, SentinelMentor_IgnoredProfessions, SentinelMentorJournalDB
+## SavedVariablesPerCharacter: SentinelMentor_Character, SentinelMentor_Ignored, SentinelMentor_IgnoredNames, SentinelMentorJournalCharacterDB
 ## IconTexture: Interface\AddOns\SentinelMentor\logo
 ## Group: Sentinel
 ## OptionalDeps: TomTom
+## AddonCompartmentFunc: SentinelMentorJournal_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: SentinelMentorJournal_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: SentinelMentorJournal_OnAddonCompartmentLeave
 ## X-Flavor: camelot
 ## X-Website: https://xrl-dev.de/
 ## X-BugTracker: https://xrl-dev.de/bugtracker
@@ -91,3 +94,67 @@ UI\Profession.lua
 UI\HunterBeasts.lua
 UI\HunterBeastsExtras.lua
 UI\Spellbook.lua
+
+
+Bindings.xml
+
+Core\Bootstrap.lua
+Localization\Localization.lua
+Localization\Locale_frFR.lua
+Localization\Locale_esES.lua
+Localization\Locale_ruRU.lua
+Localization\Locale_itIT.lua
+Localization\Locale_ptBR.lua
+Localization\Locale_koKR.lua
+Localization\Locale_zhCN.lua
+Localization\Locale_zhTW.lua
+Localization\Content_deDE.lua
+Localization\Content_frFR.lua
+Localization\Content_esES.lua
+Localization\Content_ruRU.lua
+Localization\Content_itIT.lua
+Localization\Content_ptBR.lua
+Localization\Content_koKR.lua
+Localization\Content_zhCN.lua
+Localization\Content_zhTW.lua
+Localization\Content_NewDungeons.lua
+Data\Dungeons.lua
+Data\SharedLoot.lua
+Data\DungeonEntrances.lua
+Data\DungeonRoutes.lua
+Data\Bosses.lua
+Data\QuestMaps.lua
+Data\QuestChains.lua
+Data\QuestRewards.lua
+Data\QuestShareability.lua
+Data\QuestUpdates.lua
+UI\ThemeData.lua
+UI\ItemComparisonData.lua
+Systems\MapMarkers.lua
+Systems\VersionCheck.lua
+Systems\LootFilter.lua
+Systems\Favourites.lua
+Systems\BugReport.lua
+Systems\PortraitPool.lua
+Systems\BakedPortraits.lua
+Core\Journal.lua
+Systems\ScarletWing.lua
+Systems\ItemSource.lua
+Systems\SettingsPanel.lua
+Systems\RPGMode.lua
+Systems\ForeverFilter.lua
+Systems\BossFactionTag.lua
+Systems\MapArtFinder.lua
+Systems\WingFromText.lua
+Systems\ItemIdLearner.lua
+Systems\BossSummon.lua
+Systems\MapNote.lua
+Systems\TooltipBacking.lua
+Systems\DoneTickTooltip.lua
+Systems\HomeBottomBand.lua
+Systems\LFGButton.lua
+Systems\QuestText.lua
+Systems\MapBossSize.lua
+Systems\WorldMapOverlay.lua
+Systems\Resize.lua
+Systems\OptionsPanel.lua

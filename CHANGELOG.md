@@ -15,3 +15,4 @@
 - 11 client languages: enUS, deDE, esES, esMX, frFR, itIT, koKR, ptBR, ruRU, zhCN, zhTW.
 - Single-root database (`SentinelMentorDB`) covering classes, pets, professions (skills + recipes), trainer locations, weapon skills and hunter beasts.
 - Copyright module with integrity check (`Core/Copyright.lua`).
+- Dungeon journal integrated: bosses, loot, quests, entrances, routes, per-dungeon themed artwork, favorites, LFG button, map markers, settings panel and addon compartment entry.
